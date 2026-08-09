@@ -11,10 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import decode_token
-from app.crud.user import user_crud
 from app.models.user import User
 from app.schemas.auth import TokenPayload
-from app.services.auth import get_active_session_user
+from app.services.auth import get_active_session_user, get_authorized_session_user
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -65,21 +64,30 @@ async def get_current_user(
 
 
 def require_permission(code: str) -> Callable[..., Awaitable[User]]:
-    """创建声明式权限校验依赖。"""
+    """创建声明式权限校验依赖。
+
+    会话校验与权限判定合并为一次查询，因此受保护端点只需一次数据库往返。
+    """
 
     async def permission_checker(
-        current_user: User = Depends(get_current_user),
+        payload: TokenPayload = Depends(get_access_token_payload),
         db: AsyncSession = Depends(get_db),
     ) -> User:
-        if current_user.is_superuser:
-            return current_user
-
-        if not await user_crud.has_permission(db, current_user.id, code):
+        authorized = await get_authorized_session_user(
+            db,
+            user_id=payload.user_id,
+            family_id=payload.sid,
+            token_version=payload.ver,
+            permission_code=code,
+        )
+        if authorized is None:
+            _raise_unauthorized("Token 已撤销或用户不可用")
+        if not authorized.user.is_superuser and not authorized.has_permission:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"无权限执行此操作（需要权限：{code}）",
             )
-        return current_user
+        return authorized.user
 
     return permission_checker
 

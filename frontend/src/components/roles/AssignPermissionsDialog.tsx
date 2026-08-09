@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react"
 
+import { Key02Icon } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -15,7 +16,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import { Field, FieldGroup, FieldLabel, FieldSet } from "@/components/ui/field"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -36,7 +44,9 @@ export function AssignPermissionsDialog({
   role,
   onConfirm,
 }: AssignPermissionsDialogProps) {
-  const [groupedPerms, setGroupedPerms] = useState<Record<string, Permission[]>>({})
+  const [groupedPerms, setGroupedPerms] = useState<
+    Record<string, Permission[]>
+  >({})
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
@@ -60,7 +70,7 @@ export function AssignPermissionsDialog({
     setSelectedIds((prev) =>
       prev.includes(permId)
         ? prev.filter((id) => id !== permId)
-        : [...prev, permId],
+        : [...prev, permId]
     )
   }
 
@@ -84,69 +94,79 @@ export function AssignPermissionsDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>分配权限</DialogTitle>
-          <DialogDescription>
-            为角色「{role?.name}」分配权限
-          </DialogDescription>
+          <DialogDescription>为角色「{role?.name}」分配权限</DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full" />
+          <div className="flex flex-col gap-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Skeleton key={index} className="h-8 w-full" />
             ))}
           </div>
+        ) : Object.keys(groupedPerms).length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Key02Icon />
+              </EmptyMedia>
+              <EmptyTitle>暂无可分配权限</EmptyTitle>
+              <EmptyDescription>
+                请先在权限管理中创建权限定义。
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <ScrollArea className="max-h-80">
-            <div className="space-y-4 pr-4">
+            <FieldGroup className="pr-4">
               {Object.entries(groupedPerms).map(([moduleName, perms]) => {
-                const moduleIds = perms.map((p) => p.id)
+                const moduleIds = perms.map((perm) => perm.id)
                 const allSelected = moduleIds.every((id) =>
-                  selectedIds.includes(id),
+                  selectedIds.includes(id)
                 )
                 const someSelected = moduleIds.some((id) =>
-                  selectedIds.includes(id),
+                  selectedIds.includes(id)
                 )
 
                 return (
-                  <div key={moduleName}>
-                    <div className="flex items-center gap-3 pb-2">
+                  <FieldSet key={moduleName}>
+                    <Field orientation="horizontal">
                       <Checkbox
                         id={`module-${moduleName}`}
-                        checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                        checked={allSelected}
+                        indeterminate={!allSelected && someSelected}
                         onCheckedChange={() => handleToggleModule(perms)}
                       />
-                      <Label
-                        htmlFor={`module-${moduleName}`}
-                        className="cursor-pointer font-medium"
-                      >
+                      <FieldLabel htmlFor={`module-${moduleName}`}>
                         {moduleName}（{perms.length}）
-                      </Label>
-                    </div>
-                    <Separator className="mb-2" />
-                    <div className="ml-6 space-y-2">
+                      </FieldLabel>
+                    </Field>
+                    <Separator />
+                    <FieldGroup className="ml-6 gap-3">
                       {perms.map((perm) => (
-                        <div key={perm.id} className="flex items-center gap-3">
+                        <Field key={perm.id} orientation="horizontal">
                           <Checkbox
                             id={`perm-${perm.id}`}
                             checked={selectedIds.includes(perm.id)}
                             onCheckedChange={() => handleToggle(perm.id)}
                           />
-                          <Label
+                          <FieldLabel
                             htmlFor={`perm-${perm.id}`}
-                            className="flex-1 cursor-pointer"
+                            className="font-normal"
                           >
-                            <span className="font-mono text-sm">{perm.code}</span>
-                            <span className="ml-2 text-sm text-muted-foreground">
+                            <span className="font-mono text-sm">
+                              {perm.code}
+                            </span>
+                            <span className="text-sm text-muted-foreground">
                               {perm.name}
                             </span>
-                          </Label>
-                        </div>
+                          </FieldLabel>
+                        </Field>
                       ))}
-                    </div>
-                  </div>
+                    </FieldGroup>
+                  </FieldSet>
                 )
               })}
-            </div>
+            </FieldGroup>
           </ScrollArea>
         )}
 

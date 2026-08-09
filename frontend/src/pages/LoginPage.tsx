@@ -5,12 +5,13 @@
 
 import { useState } from "react"
 import { useNavigate } from "react-router"
-import { useForm } from "react-hook-form"
+import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { toast } from "sonner"
 
 import { Shield02Icon } from "@/lib/icons"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -21,14 +22,13 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form"
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
 import { useAuth } from "@/hooks/use-auth"
 import { ROUTES } from "@/lib/constants"
 
@@ -75,7 +75,7 @@ export function LoginPage() {
           <p className="mt-4 text-lg text-primary-foreground/80">
             基于 RBAC 模型的精细化权限管控平台
           </p>
-          <div className="mt-8 space-y-3 text-sm text-primary-foreground/70">
+          <div className="mt-8 flex flex-col gap-3 text-sm text-primary-foreground/70">
             <p>• 用户、角色、权限全生命周期管理</p>
             <p>• API 端点级别细粒度权限控制</p>
             <p>• JWT 双 Token 安全认证机制</p>
@@ -96,61 +96,58 @@ export function LoginPage() {
             <CardDescription>请输入您的账号和密码</CardDescription>
           </CardHeader>
           <CardContent>
-            <Form {...form}>
-              <form
-                onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-4"
-              >
-                <FormField
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+              <FieldGroup>
+                <Controller
                   control={form.control}
                   name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>用户名</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="请输入用户名或邮箱"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="login-username">用户名</FieldLabel>
+                      <Input
+                        id="login-username"
+                        autoComplete="username"
+                        placeholder="请输入用户名或邮箱"
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                      />
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
                   )}
                 />
-                <FormField
+                <Controller
                   control={form.control}
                   name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>密码</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder="请输入密码"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="login-password">密码</FieldLabel>
+                      <Input
+                        id="login-password"
+                        type="password"
+                        autoComplete="current-password"
+                        placeholder="请输入密码"
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                      />
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
                   )}
                 />
                 {error && (
-                  <p className="text-sm text-destructive">{error}</p>
+                  <Alert variant="destructive">
+                    <AlertTitle>登录失败</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
                 )}
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  {isLoading ? "登录中..." : "登录"}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading && <Spinner data-icon="inline-start" />}
+                  {isLoading ? "登录中" : "登录"}
                 </Button>
-              </form>
-            </Form>
+              </FieldGroup>
+            </form>
           </CardContent>
           <CardFooter className="justify-center">
-            <p className="text-sm text-muted-foreground">
-              仅管理员可创建账户
-            </p>
+            <p className="text-sm text-muted-foreground">仅管理员可创建账户</p>
           </CardFooter>
         </Card>
       </div>

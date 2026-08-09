@@ -6,6 +6,7 @@ import hmac
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from secrets import token_urlsafe
 from uuid import uuid4
 
@@ -24,9 +25,17 @@ from app.schemas.auth import TokenPayload
 ARGON2_HASH = PasswordHash((Argon2Hasher(),))
 BCRYPT_HASH = PasswordHash((BcryptHasher(),))
 DUMMY_PASSWORD = token_urlsafe(32)
-DUMMY_ARGON2_HASH = ARGON2_HASH.hash(DUMMY_PASSWORD)
-DUMMY_BCRYPT_HASH = BCRYPT_HASH.hash(DUMMY_PASSWORD)
 PASSWORD_HASH_SEMAPHORE = asyncio.Semaphore(settings.PASSWORD_HASH_MAX_CONCURRENCY)
+
+
+@lru_cache(maxsize=1)
+def _dummy_hashes() -> tuple[str, str]:
+    """Build the timing-equalization hashes on first use, not at import time.
+
+    Both KDFs together cost far more than a module import should, and only the
+    credential paths ever need them.
+    """
+    return ARGON2_HASH.hash(DUMMY_PASSWORD), BCRYPT_HASH.hash(DUMMY_PASSWORD)
 
 
 class PasswordHashOverloadedError(RuntimeError):
@@ -87,8 +96,9 @@ async def _run_password_work[**P, R](
 
 def _burn_both_dummy_hashes() -> None:
     """Spend the cost of both supported algorithms for unknown/invalid hashes."""
-    ARGON2_HASH.verify(DUMMY_PASSWORD, DUMMY_ARGON2_HASH)
-    BCRYPT_HASH.verify(DUMMY_PASSWORD, DUMMY_BCRYPT_HASH)
+    dummy_argon2_hash, dummy_bcrypt_hash = _dummy_hashes()
+    ARGON2_HASH.verify(DUMMY_PASSWORD, dummy_argon2_hash)
+    BCRYPT_HASH.verify(DUMMY_PASSWORD, dummy_bcrypt_hash)
 
 
 def _verify_and_update_password(
@@ -113,7 +123,7 @@ def _verify_and_update_password(
 
         if valid:
             return PasswordVerification(valid=True, updated_hash=ARGON2_HASH.hash(password))
-        ARGON2_HASH.verify(DUMMY_PASSWORD, DUMMY_ARGON2_HASH)
+        ARGON2_HASH.verify(DUMMY_PASSWORD, _dummy_hashes()[0])
         return PasswordVerification(valid=False)
 
     if not hashed_password.startswith("$argon2"):
@@ -128,7 +138,7 @@ def _verify_and_update_password(
 
     # Every valid Argon2 path also pays a bcrypt cost. Together with the
     # mirrored bcrypt branch, this keeps account/hash types hard to time.
-    BCRYPT_HASH.verify(DUMMY_PASSWORD, DUMMY_BCRYPT_HASH)
+    BCRYPT_HASH.verify(DUMMY_PASSWORD, _dummy_hashes()[1])
     return PasswordVerification(valid=valid, updated_hash=updated_hash)
 
 

@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from "react"
-import { useForm } from "react-hook-form"
+import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import dayjs from "dayjs"
@@ -20,19 +20,19 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form"
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldTitle,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { PageHeader } from "@/components/layout/PageHeader"
 import api from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
-import type { UserWithRoles } from "@/types/user"
+import type { CurrentUser } from "@/types/user"
 
 const profileSchema = z.object({
   nickname: z.string().max(50).optional().default(""),
@@ -65,7 +65,9 @@ function getPasswordStrength(password: string): number {
 
 export function ProfilePage() {
   const { user, setUser } = useAuthStore()
-  const [profile, setProfile] = useState<UserWithRoles | null>(user as UserWithRoles | null)
+  const [profile, setProfile] = useState<CurrentUser | null>(
+    user as CurrentUser | null
+  )
 
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -83,7 +85,7 @@ export function ProfilePage() {
     const fetchProfile = async () => {
       try {
         const response = await api.get("/me")
-        const data: UserWithRoles = response.data?.data
+        const data: CurrentUser = response.data?.data
         if (data) {
           setProfile(data)
           profileForm.reset({
@@ -144,65 +146,85 @@ export function ProfilePage() {
             <CardDescription>修改您的个人资料</CardDescription>
           </CardHeader>
           <CardContent>
-            <Form {...profileForm}>
-              <form
-                onSubmit={profileForm.handleSubmit(handleProfileSubmit)}
-                className="space-y-4"
-              >
-                <FormItem>
-                  <FormLabel>用户名</FormLabel>
-                  <Input value={profile?.username ?? ""} disabled />
-                </FormItem>
-                <FormField
+            <form onSubmit={profileForm.handleSubmit(handleProfileSubmit)}>
+              <FieldGroup>
+                <Field data-disabled>
+                  <FieldLabel htmlFor="profile-username">用户名</FieldLabel>
+                  <Input
+                    id="profile-username"
+                    value={profile?.username ?? ""}
+                    disabled
+                  />
+                  <FieldDescription>用户名创建后不可修改。</FieldDescription>
+                </Field>
+                <Controller
                   control={profileForm.control}
                   name="nickname"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>昵称</FormLabel>
-                      <FormControl>
-                        <Input placeholder="请输入昵称" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="profile-nickname">昵称</FieldLabel>
+                      <Input
+                        id="profile-nickname"
+                        placeholder="请输入昵称"
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                      />
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
                   )}
                 />
-                <FormField
+                <Controller
                   control={profileForm.control}
                   name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>邮箱</FormLabel>
-                      <FormControl>
-                        <Input type="email" placeholder="请输入邮箱" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="profile-email">邮箱</FieldLabel>
+                      <Input
+                        id="profile-email"
+                        type="email"
+                        placeholder="请输入邮箱"
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                      />
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
                   )}
                 />
-                <FormItem>
-                  <FormLabel>角色</FormLabel>
+                <Field>
+                  <FieldTitle>角色</FieldTitle>
                   <div className="flex flex-wrap gap-2">
-                    {profile?.roles?.map((role) => (
-                      <Badge key={role.id} variant="secondary">
-                        {role.name}
-                      </Badge>
-                    )) ?? <span className="text-muted-foreground">暂无角色</span>}
+                    {profile?.roles?.length ? (
+                      profile.roles.map((role) => (
+                        <Badge key={role.id} variant="secondary">
+                          {role.name}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        暂无角色
+                      </span>
+                    )}
                   </div>
-                </FormItem>
-                <FormItem>
-                  <FormLabel>注册时间</FormLabel>
+                </Field>
+                <Field data-disabled>
+                  <FieldLabel htmlFor="profile-created-at">注册时间</FieldLabel>
                   <Input
+                    id="profile-created-at"
                     value={
                       profile?.created_at
-                        ? dayjs(profile.created_at).format("YYYY-MM-DD HH:mm:ss")
+                        ? dayjs(profile.created_at).format(
+                            "YYYY-MM-DD HH:mm:ss"
+                          )
                         : ""
                     }
                     disabled
                   />
-                </FormItem>
-                <Button type="submit">保存修改</Button>
-              </form>
-            </Form>
+                </Field>
+                <Button type="submit" className="w-fit">
+                  保存修改
+                </Button>
+              </FieldGroup>
+            </form>
           </CardContent>
         </Card>
 
@@ -213,69 +235,86 @@ export function ProfilePage() {
             <CardDescription>定期修改密码以提高安全性</CardDescription>
           </CardHeader>
           <CardContent>
-            <Form {...passwordForm}>
-              <form
-                onSubmit={passwordForm.handleSubmit(handlePasswordSubmit)}
-                className="space-y-4"
-              >
-                <FormField
+            <form onSubmit={passwordForm.handleSubmit(handlePasswordSubmit)}>
+              <FieldGroup>
+                <Controller
                   control={passwordForm.control}
                   name="old_password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>旧密码</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="请输入旧密码" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="old-password">旧密码</FieldLabel>
+                      <Input
+                        id="old-password"
+                        type="password"
+                        autoComplete="current-password"
+                        placeholder="请输入旧密码"
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                      />
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
                   )}
                 />
-                <FormField
+                <Controller
                   control={passwordForm.control}
                   name="new_password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>新密码</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder="至少 8 个字符"
-                          {...field}
-                          onChange={(e) => {
-                            field.onChange(e)
-                            setNewPassword(e.target.value)
-                          }}
-                        />
-                      </FormControl>
-                      <FormMessage />
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="new-password">新密码</FieldLabel>
+                      <Input
+                        id="new-password"
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="至少 8 个字符"
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                        onChange={(event) => {
+                          field.onChange(event)
+                          setNewPassword(event.target.value)
+                        }}
+                      />
                       {newPassword && (
-                        <div className="space-y-1">
-                          <Progress value={passwordStrength} className="h-2" />
-                          <p className="text-xs text-muted-foreground">
-                            密码强度：{passwordStrength < 50 ? "弱" : passwordStrength < 75 ? "中" : "强"}
-                          </p>
+                        <div className="flex flex-col gap-1">
+                          <Progress value={passwordStrength} />
+                          <FieldDescription>
+                            密码强度：
+                            {passwordStrength < 50
+                              ? "弱"
+                              : passwordStrength < 75
+                                ? "中"
+                                : "强"}
+                          </FieldDescription>
                         </div>
                       )}
-                    </FormItem>
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
                   )}
                 />
-                <FormField
+                <Controller
                   control={passwordForm.control}
                   name="confirm_password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>确认新密码</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="请再次输入新密码" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid}>
+                      <FieldLabel htmlFor="confirm-password">
+                        确认新密码
+                      </FieldLabel>
+                      <Input
+                        id="confirm-password"
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="请再次输入新密码"
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                      />
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
                   )}
                 />
-                <Button type="submit">确认修改</Button>
-              </form>
-            </Form>
+                <Button type="submit" className="w-fit">
+                  确认修改
+                </Button>
+              </FieldGroup>
+            </form>
           </CardContent>
         </Card>
       </div>

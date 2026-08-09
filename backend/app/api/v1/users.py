@@ -111,6 +111,10 @@ async def update_user(
     user = await user_crud.get_with_roles(db, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="用户不存在")
+    if user_id == current_user.id and user_in.is_active is False:
+        # Disabling bumps the token version and revokes every family, which would
+        # lock the caller out of the system immediately.
+        raise HTTPException(status_code=400, detail="不能停用当前登录用户")
 
     if user_in.email is not None and str(user_in.email) != user.email:
         existing = await user_crud.get_by_email_any(db, str(user_in.email))
@@ -124,7 +128,6 @@ async def update_user(
     if updated is None:  # protects against an unexpected concurrent deletion
         raise HTTPException(status_code=404, detail="用户不存在")
     if disabling:
-        updated.token_version += 1
         await revoke_all_refresh_sessions(db, user_id, reason="user_disabled")
         # The security lock refresh intentionally expires relationship state;
         # rehydrate the response shape without opening a new transaction.
@@ -164,7 +167,6 @@ async def delete_user(
 
     if not await user_crud.soft_delete(db, user_id):
         raise HTTPException(status_code=404, detail="用户不存在")
-    user.token_version += 1
     await revoke_all_refresh_sessions(db, user_id, reason="user_deleted")
 
     await log_audit(

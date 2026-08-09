@@ -13,11 +13,18 @@ import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
 import { PAGE_SIZE_OPTIONS } from "@/lib/constants"
+
+/** base-ui 的 Select 需要 items 才能在受控赋值时渲染选中项文案 */
+const PAGE_SIZE_ITEMS = PAGE_SIZE_OPTIONS.map((size) => ({
+  label: String(size),
+  value: String(size),
+}))
 
 interface PaginationProps {
   page: number
@@ -49,18 +56,23 @@ export function Pagination({
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">每页</span>
           <Select
+            items={PAGE_SIZE_ITEMS}
             value={String(pageSize)}
-            onValueChange={(val) => onPageSizeChange(Number(val))}
+            onValueChange={(value) => {
+              if (value !== null) onPageSizeChange(Number(value))
+            }}
           >
-            <SelectTrigger className="h-8 w-[70px]">
+            <SelectTrigger size="sm" className="w-[70px]" aria-label="每页条数">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {PAGE_SIZE_ITEMS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </div>
@@ -70,18 +82,20 @@ export function Pagination({
           <Button
             variant="outline"
             size="icon-sm"
+            aria-label="第一页"
             onClick={() => onPageChange(1)}
             disabled={page <= 1}
           >
-            <ChevronsLeftIcon className="size-4" />
+            <ChevronsLeftIcon />
           </Button>
           <Button
             variant="outline"
             size="icon-sm"
+            aria-label="上一页"
             onClick={() => onPageChange(page - 1)}
             disabled={page <= 1}
           >
-            <ChevronLeftIcon className="size-4" />
+            <ChevronLeftIcon />
           </Button>
           <span className="px-3 text-sm font-medium">
             {page} / {totalPages}
@@ -89,18 +103,20 @@ export function Pagination({
           <Button
             variant="outline"
             size="icon-sm"
+            aria-label="下一页"
             onClick={() => onPageChange(page + 1)}
             disabled={page >= totalPages}
           >
-            <ChevronRightIcon className="size-4" />
+            <ChevronRightIcon />
           </Button>
           <Button
             variant="outline"
             size="icon-sm"
+            aria-label="最后一页"
             onClick={() => onPageChange(totalPages)}
             disabled={page >= totalPages}
           >
-            <ChevronsRightIcon className="size-4" />
+            <ChevronsRightIcon />
           </Button>
         </div>
       </div>

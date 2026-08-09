@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import sys
 
 from pydantic import ValidationError
 from sqlalchemy import func, or_, select
@@ -21,7 +22,15 @@ BOOTSTRAP_ADVISORY_LOCK_ID = 0x4641535441504941
 
 
 def _bootstrap_credentials() -> UserRegister:
-    """读取并验证显式提供的初始化凭据。"""
+    """
+    读取并验证显式提供的初始化凭据。
+
+    Returns:
+        校验通过的注册凭据
+
+    Raises:
+        RuntimeError: 缺少配置或格式无效时
+    """
     username = settings.INIT_SUPERUSER_USERNAME
     email = settings.INIT_SUPERUSER_EMAIL
     password_setting = settings.INIT_SUPERUSER_PASSWORD
@@ -97,9 +106,14 @@ async def init_superuser() -> None:
 
 
 def main() -> None:
-    """同步命令行入口。"""
+    """
+    同步命令行入口。
+
+    Windows 上使用 SelectorEventLoop，避免 psycopg 异步模式与 ProactorEventLoop 不兼容。
+    """
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
     try:
-        asyncio.run(init_superuser())
+        asyncio.run(init_superuser(), loop_factory=loop_factory)
     except RuntimeError as exc:
         raise SystemExit(f"初始化失败：{exc}") from None
 

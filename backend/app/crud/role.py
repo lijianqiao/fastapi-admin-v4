@@ -44,19 +44,6 @@ class CRUDRole(CRUDBase[Role]):
         result = await db.execute(select(Role).where(Role.name == name))
         return result.scalar_one_or_none()
 
-    async def get_with_permissions(self, db: AsyncSession, role_id: int) -> Role | None:
-        """Return an active role with active permissions and user count loaded."""
-        stmt = (
-            select(Role)
-            .where(Role.id == role_id, Role.is_deleted.is_(False))
-            .options(
-                selectinload(Role.permissions.and_(Permission.is_deleted.is_(False))),
-                with_expression(Role._user_count, self._active_user_count_expression()),
-            )
-        )
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
-
     async def get_with_permissions_for_update(
         self,
         db: AsyncSession,

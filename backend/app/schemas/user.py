@@ -73,6 +73,17 @@ class UserWithRoles(UserResponse):
     roles: list[RoleResponse] = Field(default_factory=list)
 
 
+class CurrentUserResponse(UserWithRoles):
+    """Own-profile representation carrying the effective permission codes.
+
+    The client cannot derive these from ``roles`` alone, so the flattened set of
+    codes granted through active roles is returned explicitly. A superuser passes
+    every check regardless of what this list contains.
+    """
+
+    permissions: list[str] = Field(default_factory=list)
+
+
 class AssignRolesRequest(ApiModel):
     """Replace a user's complete role set."""
 

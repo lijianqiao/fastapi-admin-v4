@@ -14,7 +14,10 @@ function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   )
 }
 
-function PaginationContent({ className, ...props }: React.ComponentProps<"ul">) {
+function PaginationContent({
+  className,
+  ...props
+}: React.ComponentProps<"ul">) {
   return (
     <ul
       data-slot="pagination-content"

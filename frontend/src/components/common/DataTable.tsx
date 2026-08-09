@@ -4,9 +4,21 @@
  * 支持排序、自定义列渲染。
  */
 
-import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table"
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
 import type { ColumnDef } from "@tanstack/react-table"
 
+import { InboxIcon } from "@/lib/icons"
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -47,7 +59,7 @@ export function DataTable<TData, TValue>({
                     ? null
                     : flexRender(
                         header.column.columnDef.header,
-                        header.getContext(),
+                        header.getContext()
                       )}
                 </TableHead>
               ))}
@@ -56,14 +68,15 @@ export function DataTable<TData, TValue>({
         </TableHeader>
         <TableBody>
           {isLoading ? (
-            <TableRow>
-              <TableCell
-                colSpan={columns.length}
-                className="h-24 text-center text-muted-foreground"
-              >
-                加载中...
-              </TableCell>
-            </TableRow>
+            Array.from({ length: 5 }).map((_, rowIndex) => (
+              <TableRow key={rowIndex} className="hover:bg-transparent">
+                {columns.map((_column, cellIndex) => (
+                  <TableCell key={cellIndex} className="py-3">
+                    <Skeleton className="h-5 w-full" />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
           ) : table.getRowModel().rows.length ? (
             table.getRowModel().rows.map((row) => (
               <TableRow key={row.id}>
@@ -75,12 +88,16 @@ export function DataTable<TData, TValue>({
               </TableRow>
             ))
           ) : (
-            <TableRow>
-              <TableCell
-                colSpan={columns.length}
-                className="h-24 text-center text-muted-foreground"
-              >
-                {emptyMessage}
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={columns.length} className="p-0">
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <InboxIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>{emptyMessage}</EmptyTitle>
+                  </EmptyHeader>
+                </Empty>
               </TableCell>
             </TableRow>
           )}

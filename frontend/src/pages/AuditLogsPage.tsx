@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -41,6 +42,12 @@ const ACTION_LABELS: Record<string, string> = {
   update_profile: "更新资料",
   change_password: "修改密码",
 }
+
+/** base-ui 的 Select 需要 items 才能在受控赋值时渲染选中项文案 */
+const ACTION_ITEMS = [
+  { label: "全部操作", value: "all" },
+  ...Object.entries(ACTION_LABELS).map(([value, label]) => ({ label, value })),
+]
 
 export function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
@@ -122,7 +129,7 @@ export function AuditLogsPage() {
           dayjs(row.original.created_at).format("YYYY-MM-DD HH:mm:ss"),
       },
     ],
-    [],
+    []
   )
 
   return (
@@ -141,22 +148,24 @@ export function AuditLogsPage() {
           className="sm:max-w-xs"
         />
         <Select
+          items={ACTION_ITEMS}
           value={actionFilter}
-          onValueChange={(val) => {
-            setActionFilter(val)
+          onValueChange={(value) => {
+            setActionFilter(value ?? "all")
             setPage(1)
           }}
         >
           <SelectTrigger className="sm:w-40">
-            <SelectValue placeholder="操作类型" />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部操作</SelectItem>
-            {Object.entries(ACTION_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
+            <SelectGroup>
+              {ACTION_ITEMS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>

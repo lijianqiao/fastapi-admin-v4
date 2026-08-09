@@ -36,10 +36,30 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: "仪表盘", path: ROUTES.DASHBOARD, icon: Dashboard02Icon },
-  { label: "用户管理", path: ROUTES.USERS, icon: UserMultipleIcon, permission: PERMISSIONS.USER_READ },
-  { label: "角色管理", path: ROUTES.ROLES, icon: Shield02Icon, permission: PERMISSIONS.ROLE_READ },
-  { label: "权限管理", path: ROUTES.PERMISSIONS, icon: Key02Icon, permission: PERMISSIONS.PERMISSION_READ },
-  { label: "操作日志", path: ROUTES.AUDIT, icon: FileEditIcon, permission: PERMISSIONS.AUDIT_READ },
+  {
+    label: "用户管理",
+    path: ROUTES.USERS,
+    icon: UserMultipleIcon,
+    permission: PERMISSIONS.USER_READ,
+  },
+  {
+    label: "角色管理",
+    path: ROUTES.ROLES,
+    icon: Shield02Icon,
+    permission: PERMISSIONS.ROLE_READ,
+  },
+  {
+    label: "权限管理",
+    path: ROUTES.PERMISSIONS,
+    icon: Key02Icon,
+    permission: PERMISSIONS.PERMISSION_READ,
+  },
+  {
+    label: "操作日志",
+    path: ROUTES.AUDIT,
+    icon: FileEditIcon,
+    permission: PERMISSIONS.AUDIT_READ,
+  },
   { label: "个人中心", path: ROUTES.PROFILE, icon: UserCircleIcon },
 ]
 
@@ -57,7 +77,7 @@ function NavList() {
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive
                   ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )
             }
           >

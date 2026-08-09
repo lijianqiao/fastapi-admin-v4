@@ -8,12 +8,22 @@ import { useCallback } from "react"
 import api, { setAccessToken } from "@/lib/api"
 import { ROUTES } from "@/lib/constants"
 import { useAuthStore } from "@/store/auth"
-import type { LoginRequest } from "@/types/auth"
-import type { UserInfo, UserWithRoles } from "@/types/user"
+import type { LoginRequest, UserInfo } from "@/types/auth"
+import type { CurrentUser } from "@/types/user"
 
 export function useAuth() {
-  const { token, user, permissions, isAuthenticated, isLoading, setToken, setUser, setPermissions, setLoading, logout } =
-    useAuthStore()
+  const {
+    token,
+    user,
+    permissions,
+    isAuthenticated,
+    isLoading,
+    setToken,
+    setUser,
+    setPermissions,
+    setLoading,
+    logout,
+  } = useAuthStore()
 
   /** 登录 */
   const login = useCallback(
@@ -38,20 +48,16 @@ export function useAuth() {
 
         // 获取用户信息
         const profileResponse = await api.get("/me")
-        const userInfo: UserWithRoles = profileResponse.data?.data
+        const userInfo: CurrentUser = profileResponse.data?.data
         if (userInfo) {
           setUser(userInfo)
-          // 从角色中提取权限码
-          const permCodes = userInfo.roles?.flatMap((role) =>
-            role.permissions?.map((p) => p.code) ?? [],
-          ) ?? []
-          setPermissions(permCodes)
+          setPermissions(userInfo.permissions ?? [])
         }
       } finally {
         setLoading(false)
       }
     },
-    [setToken, setUser, setPermissions, setLoading],
+    [setToken, setUser, setPermissions, setLoading]
   )
 
   /** 退出登录 */
@@ -71,13 +77,10 @@ export function useAuth() {
   const fetchProfile = useCallback(async (): Promise<UserInfo | null> => {
     try {
       const response = await api.get("/me")
-      const userInfo: UserWithRoles = response.data?.data
+      const userInfo: CurrentUser = response.data?.data
       if (userInfo) {
         setUser(userInfo)
-        const permCodes = userInfo.roles?.flatMap((role) =>
-          role.permissions?.map((p) => p.code) ?? [],
-        ) ?? []
-        setPermissions(permCodes)
+        setPermissions(userInfo.permissions ?? [])
         return userInfo
       }
     } catch {

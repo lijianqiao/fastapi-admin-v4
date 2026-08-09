@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react"
 
+import { Shield02Icon } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -15,7 +16,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import api from "@/lib/api"
 import type { Role } from "@/types/role"
@@ -58,7 +74,7 @@ export function AssignRolesDialog({
     setSelectedIds((prev) =>
       prev.includes(roleId)
         ? prev.filter((id) => id !== roleId)
-        : [...prev, roleId],
+        : [...prev, roleId]
     )
   }
 
@@ -78,40 +94,49 @@ export function AssignRolesDialog({
         </DialogHeader>
 
         {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full" />
+          <div className="flex flex-col gap-3">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={index} className="h-8 w-full" />
             ))}
           </div>
+        ) : roles.length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Shield02Icon />
+              </EmptyMedia>
+              <EmptyTitle>暂无可用角色</EmptyTitle>
+              <EmptyDescription>请先在角色管理中创建角色。</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
-          <div className="max-h-60 space-y-3 overflow-y-auto">
-            {roles.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">
-                暂无可用角色
-              </p>
-            ) : (
-              roles.map((role) => (
-                <div key={role.id} className="flex items-center gap-3">
-                  <Checkbox
-                    id={`role-${role.id}`}
-                    checked={selectedIds.includes(role.id)}
-                    onCheckedChange={() => handleToggle(role.id)}
-                  />
-                  <Label
-                    htmlFor={`role-${role.id}`}
-                    className="flex-1 cursor-pointer"
-                  >
-                    <span className="font-medium">{role.name}</span>
-                    {role.description && (
-                      <span className="ml-2 text-sm text-muted-foreground">
-                        {role.description}
-                      </span>
-                    )}
-                  </Label>
-                </div>
-              ))
-            )}
-          </div>
+          <ScrollArea className="max-h-60">
+            <FieldSet>
+              <FieldLegend variant="label">可分配角色</FieldLegend>
+              <FieldDescription>
+                勾选后将替换该用户的全部角色。
+              </FieldDescription>
+              <FieldGroup className="gap-3">
+                {roles.map((role) => (
+                  <Field key={role.id} orientation="horizontal">
+                    <Checkbox
+                      id={`role-${role.id}`}
+                      checked={selectedIds.includes(role.id)}
+                      onCheckedChange={() => handleToggle(role.id)}
+                    />
+                    <FieldLabel htmlFor={`role-${role.id}`}>
+                      <span className="font-medium">{role.name}</span>
+                      {role.description && (
+                        <span className="text-sm text-muted-foreground">
+                          {role.description}
+                        </span>
+                      )}
+                    </FieldLabel>
+                  </Field>
+                ))}
+              </FieldGroup>
+            </FieldSet>
+          </ScrollArea>
         )}
 
         <DialogFooter>

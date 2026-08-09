@@ -1,0 +1,226 @@
+%% 权限管理系统 — 类图
+%% 作者: 高见远（架构师）
+
+classDiagram
+    direction TB
+
+    %% ===== 基础模型 =====
+    class TimestampMixin {
+        +datetime created_at
+        +datetime updated_at
+    }
+
+    class Base {
+        <<SQLAlchemy DeclarativeBase>>
+    }
+
+    %% ===== 业务模型 =====
+    class User {
+        +int id
+        +str username
+        +str email
+        +str hashed_password
+        +str nickname
+        +bool is_active
+        +bool is_deleted
+        +bool is_superuser
+        +int token_version
+        +datetime created_at
+        +datetime updated_at
+        +roles: Mapped[list[Role]]
+    }
+
+    class Role {
+        +int id
+        +str name
+        +str description
+        +bool is_deleted
+        +datetime created_at
+        +datetime updated_at
+        +permissions: Mapped[list[Permission]]
+        +users: Mapped[list[User]]
+    }
+
+    class Permission {
+        +int id
+        +str name
+        +str code
+        +str module
+        +str description
+        +bool is_deleted
+        +datetime created_at
+        +datetime updated_at
+        +roles: Mapped[list[Role]]
+    }
+
+    class UserRole {
+        +int user_id
+        +int role_id
+        +datetime created_at
+    }
+
+    class RolePermission {
+        +int role_id
+        +int permission_id
+        +datetime created_at
+    }
+
+    class AuditLog {
+        +int id
+        +int user_id
+        +str action
+        +str target
+        +str detail
+        +str ip
+        +datetime created_at
+    }
+
+    class RefreshSessionFamily {
+        +str id
+        +int user_id
+        +int token_version
+        +datetime expires_at
+        +datetime revoked_at
+        +str revoked_reason
+    }
+
+    class RefreshSession {
+        +int id
+        +int user_id
+        +str jti
+        +str family_id
+        +str token_hash
+        +datetime expires_at
+        +datetime revoked_at
+    }
+
+    Base <|-- User : inherits
+    Base <|-- Role : inherits
+    Base <|-- Permission : inherits
+    Base <|-- AuditLog : inherits
+    Base <|-- RefreshSessionFamily : inherits
+    Base <|-- RefreshSession : inherits
+    TimestampMixin <|-- User : mixin
+    TimestampMixin <|-- Role : mixin
+    TimestampMixin <|-- Permission : mixin
+
+    User "1" --o "*" UserRole : user_id
+    Role "1" --o "*" UserRole : role_id
+    Role "1" --o "*" RolePermission : role_id
+    Permission "1" --o "*" RolePermission : permission_id
+    User "1" --o "*" AuditLog : user_id
+    User "1" --o "*" RefreshSessionFamily : user_id
+    RefreshSessionFamily "1" --o "*" RefreshSession : family_id
+
+    %% ===== CRUD 层 =====
+    class CRUDBase~T~ {
+        +model: type[T]
+        +create(db: AsyncSession, obj: dict) Awaitable[T]
+        +get(db: AsyncSession, id: int) Awaitable[T | None]
+        +get_multi(db: AsyncSession, skip: int, limit: int) Awaitable[list[T]]
+        +update(db: AsyncSession, id: int, obj: dict) Awaitable[T | None]
+        +soft_delete(db: AsyncSession, id: int) Awaitable[bool]
+    }
+
+    class CRUDUser {
+        +get_by_username(db, username: str) User | None
+        +get_by_email(db, email: str) User | None
+        +create(db, obj: UserCreate) User
+        +update(db, id: int, obj: UserUpdate) User | None
+        +get_multi_filtered(db, search, is_active, role_id, skip, limit) list[User]
+        +assign_roles(db, user_id: int, role_ids: list[int]) User
+        +get_permission_codes(db, user_id: int) list[str]
+        +permission_exists(user_id: int, code: str) Exists$
+        +has_permission(db, user_id: int, code: str) bool
+        +authenticate(db, username: str, password: str) User | None
+        +change_password(db, user_id, old, new) bool
+    }
+
+    class CRUDRole {
+        +get_by_name(db, name: str) Role | None
+        +assign_permissions(db, role_id: int, permission_ids: list[int]) Role
+        +get_user_count(db, role_id: int) int
+        +get_permission_ids(db, role_id: int) list[int]
+    }
+
+    class CRUDPermission {
+        +get_by_code(db, code: str) Permission | None
+        +get_by_module(db, module: str) list[Permission]
+        +get_all_grouped(db) dict[str, list[Permission]]
+    }
+
+    class CRUDAuditLog {
+        +create(db, obj: AuditLogCreate) AuditLog
+        +get_multi_filtered(db, user_id, action, skip, limit) list[AuditLog]
+    }
+
+    CRUDBase <|-- CRUDUser
+    CRUDBase <|-- CRUDRole
+    CRUDBase <|-- CRUDPermission
+
+    %% ===== 核心服务 =====
+    class SecurityUtils {
+        +hash_password(password: str) str$
+        +verify_and_update_password(plain: str, hashed: str) PasswordVerification$
+        +create_access_token(subject: str) str$
+        +issue_refresh_token(subject: str) IssuedRefreshToken$
+        +decode_token(token: str) dict$
+    }
+
+    class Settings {
+        +str DATABASE_URL
+        +str SECRET_KEY
+        +int ACCESS_TOKEN_EXPIRE_MINUTES
+        +int REFRESH_TOKEN_EXPIRE_DAYS
+        +int PASSWORD_HASH_MAX_CONCURRENCY
+        +str ALGORITHM
+        +int DB_POOL_SIZE
+        +int DB_MAX_OVERFLOW
+        +str BACKEND_CORS_ORIGINS
+        +str COOKIE_SECURE
+    }
+
+    class Dependencies {
+        +get_db() AsyncIterator[AsyncSession]$
+        +get_current_user(token: str, db: AsyncSession) Awaitable[User]$
+        +require_permission(code: str) Callable$
+    }
+
+    %% ===== 服务层 =====
+    class AuthService {
+        +authenticate_user(db, identifier, password) User | None$
+        +create_login_session(db, user) SessionTokens$
+        +rotate_refresh_session(db, raw_token, claims) SessionTokens$
+        +revoke_refresh_session(db, raw_token, claims, reason) int | None$
+        +revoke_all_refresh_sessions(db, user_id, reason) void$
+        +get_active_session_user(db, user_id, family_id, token_version) User | None$
+        +get_authorized_session_user(db, user_id, family_id, token_version, permission_code) AuthorizedUser | None$
+    }
+
+    class AuthorizedUser {
+        +user: User
+        +has_permission: bool
+    }
+
+    class LoginRateLimiter {
+        +hit(client_ip: str, identifier: str) int | None
+        +clear(client_ip: str, identifier: str) void
+        +reset() void
+    }
+
+    %% ===== 工具函数 =====
+    class AuditHelper {
+        +log(db: AsyncSession, user_id: int, action: str, target: str, detail: str, ip: str) Awaitable[void]$
+    }
+
+    %% ===== 依赖关系 =====
+    CRUDUser --> SecurityUtils : authenticate
+    Dependencies --> SecurityUtils : decode_token
+    Dependencies --> AuthService : 会话与权限一次校验
+    AuthService --> CRUDUser : permission_exists / authenticate
+    AuthService --> SecurityUtils : 签发与轮换
+    AuthService --> RefreshSessionFamily : 整族锁与撤销
+    AuthService --> RefreshSession : 摘要与轮换历史
+    AuthService --> LoginRateLimiter : 登录/注册限流
+    AuthService ..> AuthorizedUser : 返回
+    AuditHelper --> CRUDAuditLog : create

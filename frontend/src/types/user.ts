@@ -19,6 +19,11 @@ export interface UserWithRoles extends User {
   roles: Role[]
 }
 
+/** 个人信息（GET/PATCH /me）：权限码由后端展开后下发，无法从 roles 推导 */
+export interface CurrentUser extends UserWithRoles {
+  permissions: string[]
+}
+
 /** 创建用户请求 */
 export interface UserCreate {
   username: string

@@ -1,0 +1,209 @@
+%% 权限管理系统 — 时序图
+%% 作者: 高见远（架构师）
+%% 覆盖流程: 登录、权限校验、用户角色分配、Token 刷新、用户创建
+
+%% ===== 1. 登录流程 =====
+sequenceDiagram
+    participant C as Client
+    participant API as AuthAPI
+    participant AS as AuthService
+    participant CU as CRUDUser
+    participant SU as SecurityUtils
+    participant DB as Database
+    participant AL as AuditHelper
+
+    C->>API: POST /api/v1/auth/login
+    Note over API: {username, password}
+    API->>API: 校验 Origin/Referer/Sec-Fetch-Site
+    API->>AS: login_rate_limiter.hit(ip, identifier)
+    alt 超出账户/IP 滑动窗口
+        AS-->>API: retry_after
+        API-->>C: 429 + Retry-After
+    else 允许尝试
+        API->>CU: authenticate(db, identifier, password)
+        CU->>DB: SELECT user WHERE username/email=? AND is_deleted=false
+        DB-->>CU: User | None
+        Note over CU: rollback 释放连接，再做 KDF
+        CU->>SU: verify_and_update_password(input, hashed)
+        Note over SU: 线程池 + 并发闸门；未知用户也燃烧两种算法的 dummy hash
+        SU-->>CU: PasswordVerification(valid, updated_hash)
+        alt 密码错误或用户停用
+            CU-->>API: None
+            API->>AL: log(None, "login_failed", "auth", ip)
+            AL->>DB: INSERT audit_logs; COMMIT
+            API-->>C: 401 Unauthorized
+        else 密码正确
+            CU->>DB: SELECT user FOR NO KEY UPDATE（重读并加锁）
+            opt 旧 bcrypt 哈希
+                CU->>DB: UPDATE users SET hashed_password=argon2id
+            end
+            CU-->>API: User
+            API->>AS: create_login_session(db, user)
+            AS->>DB: SELECT user FOR NO KEY UPDATE
+            AS->>SU: issue_refresh_token(user.id, ver)
+            SU-->>AS: token + jti + family_id + expires_at
+            AS->>DB: INSERT refresh_session_families
+            AS->>DB: INSERT refresh_sessions(token_hash=HMAC(token))
+            AS->>SU: create_access_token(user.id, ver, sid=family_id)
+            SU-->>AS: access_token
+            AS-->>API: SessionTokens
+            API->>AL: log(user.id, "login", "auth", ip)
+            AL->>DB: INSERT audit_logs
+            API->>DB: COMMIT（业务写入与审计一次提交）
+            API-->>C: 200 {access_token, token_type, expires_in}
+            Note over API: Set-Cookie refresh_token, HttpOnly + SameSite=Strict
+        end
+    end
+
+%% ===== 2. 权限校验流程 =====
+sequenceDiagram
+    participant C as Client
+    participant API as UsersAPI
+    participant Dep as Dependencies
+    participant SU as SecurityUtils
+    participant AS as AuthService
+    participant CU as CRUDUser
+    participant DB as Database
+
+    C->>API: GET /api/v1/users (Authorization: Bearer <token>)
+    API->>Dep: require_permission("user:read")
+    Dep->>SU: decode_token(access_token)
+    alt Token 无效/过期/类型错误
+        SU-->>Dep: JWTError
+        Dep-->>API: 401 Unauthorized
+        API-->>C: 401
+    else Token 有效
+        SU-->>Dep: TokenPayload {sub, ver, sid, type}
+        Dep->>AS: get_authorized_session_user(user_id, sid, ver, "user:read")
+        Note over AS: 会话有效性与权限判定合并为一条语句，每个受保护请求只需一次往返
+        AS->>DB: SELECT users.*, EXISTS(权限子查询) JOIN refresh_session_families WHERE 账号可用 AND token_version 匹配 AND family 未撤销未过期
+        DB-->>AS: (User, has_permission) 或无行
+        alt 无行（会话被撤销 / 用户不可用 / 版本失效）
+            AS-->>Dep: None
+            Dep-->>API: 401 Unauthorized
+            API-->>C: 401
+        else 有行但 has_permission=false 且非超管
+            AS-->>Dep: AuthorizedUser(has_permission=false)
+            Dep-->>API: 403 Forbidden
+            API-->>C: 403
+        else 通过
+            AS-->>Dep: AuthorizedUser(user, has_permission=true)
+            Dep-->>API: current_user: User
+            API->>CU: get_multi_filtered(db, ...)
+            CU->>DB: SELECT count(*) + 分页查询 WHERE is_deleted=false ORDER BY id LIMIT/OFFSET
+            CU->>DB: selectinload 一次性加载各用户的启用角色
+            DB-->>CU: [User, ...]
+            CU-->>API: users list + total
+            API-->>C: 200 {items, total, page, page_size}
+        end
+    end
+
+%% ===== 3. 用户角色分配流程 =====
+sequenceDiagram
+    participant C as Client
+    participant API as UsersAPI
+    participant Dep as Dependencies
+    participant CU as CRUDUser
+    participant CR as CRUDRole
+    participant DB as Database
+    participant AL as AuditHelper
+
+    C->>API: PUT /api/v1/users/{id}/roles
+    Note over API: {role_ids: [1, 2, 3]}
+    API->>Dep: require_permission("user:assign")
+    Dep-->>API: current_user (已验证)
+    API->>CU: get(db, user_id)
+    CU->>DB: SELECT * FROM users WHERE id=?
+    DB-->>CU: User
+    alt 用户不存在
+        CU-->>API: None
+        API-->>C: 404 Not Found
+    else 用户存在
+        CU-->>API: User
+        loop 每个 role_id
+            API->>CR: get(db, role_id)
+            CR->>DB: SELECT * FROM roles WHERE id=? AND is_deleted=false
+            DB-->>CR: Role | None
+            alt 角色不存在
+                CR-->>API: None
+                API-->>C: 400 Bad Request
+            end
+        end
+        API->>CU: assign_roles(db, user_id, role_ids)
+        CU->>DB: DELETE FROM user_roles WHERE user_id=?
+        CU->>DB: INSERT INTO user_roles (user_id, role_id) VALUES ...
+        DB-->>CU: Success
+        CU-->>API: User (with updated roles)
+        API->>AL: log(db, current_user.id, "assign_roles", "user:{id}", "分配角色: [1,2,3]", ip)
+        AL->>DB: INSERT INTO audit_logs
+        API-->>C: 200 {user with roles}
+    end
+
+%% ===== 4. Token 刷新流程 =====
+sequenceDiagram
+    participant C as Client
+    participant API as AuthAPI
+    participant SU as SecurityUtils
+    participant CU as CRUDUser
+    participant DB as Database
+
+    Note over C: access_token 过期，axios 拦截器捕获 401
+    C->>API: POST /api/v1/auth/refresh
+    Note over API: Cookie: refresh_token=xxx
+    API->>SU: decode_token(refresh_token)
+    alt refresh_token 无效/过期
+        SU-->>API: JWTError
+        API-->>C: 401 Unauthorized
+        Note over API: Set-Cookie: refresh_token="" (清除)
+    else refresh_token 有效
+        SU-->>API: {sub, jti, sid, ver}
+        API->>DB: SELECT user FOR NO KEY UPDATE
+        API->>DB: SELECT family FOR UPDATE
+        API->>DB: SELECT refresh_session FOR UPDATE
+        alt 用户/会话无效，或旧 token 在有效期内重放
+            API->>DB: UPDATE family SET revoked_at=now()
+            API->>DB: INSERT audit_log; COMMIT
+            API-->>C: 401 + clear cookie
+        else 当前 token 可消费
+            API->>SU: issue_refresh_token(user.id, family_id)
+            SU-->>API: new_refresh_token
+            API->>DB: 撤销旧 token，插入新摘要，延长 family，COMMIT
+            API->>SU: create_access_token(user.id, ver, family_id)
+            SU-->>API: new_access_token
+            API-->>C: 200 {access_token, token_type}
+            Note over API: Set-Cookie: new_refresh_token (HttpOnly)
+        end
+    end
+
+%% ===== 5. 用户创建流程 =====
+sequenceDiagram
+    participant C as Client
+    participant API as UsersAPI
+    participant Dep as Dependencies
+    participant CU as CRUDUser
+    participant SU as SecurityUtils
+    participant DB as Database
+    participant AL as AuditHelper
+
+    C->>API: POST /api/v1/users
+    Note over API: {username, email, password, nickname, role_ids}
+    API->>Dep: require_permission("user:create")
+    Dep-->>API: current_user (已验证)
+    API->>CU: get_by_username(db, username)
+    CU->>DB: SELECT * FROM users WHERE username=?
+    DB-->>CU: None
+    API->>CU: get_by_email(db, email)
+    CU->>DB: SELECT * FROM users WHERE email=?
+    DB-->>CU: None
+    API->>SU: hash_password(password)
+    SU-->>API: hashed_password
+    API->>CU: create(db, {username, email, hashed_password, ...})
+    CU->>DB: INSERT INTO users ...
+    DB-->>CU: User (with id)
+    API->>CU: assign_roles(db, user.id, role_ids)
+    CU->>DB: INSERT INTO user_roles ...
+    DB-->>CU: User (with roles)
+    CU-->>API: User
+    API->>AL: log(db, current_user.id, "create_user", "user:{id}", "创建用户: {username}", ip)
+    AL->>DB: INSERT INTO audit_logs
+    API-->>C: 201 {user}

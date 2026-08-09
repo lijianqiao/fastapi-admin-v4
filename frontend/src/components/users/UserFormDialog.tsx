@@ -4,7 +4,7 @@
  */
 
 import { useEffect } from "react"
-import { useForm } from "react-hook-form"
+import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 
@@ -18,13 +18,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form"
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import type { User, UserCreate, UserUpdate } from "@/types/user"
 
@@ -38,7 +36,12 @@ const createSchema = z.object({
 const editSchema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
   nickname: z.string().max(50).optional().default(""),
-  password: z.string().min(8, "密码至少 8 个字符").max(128).optional().or(z.literal("")),
+  password: z
+    .string()
+    .min(8, "密码至少 8 个字符")
+    .max(128)
+    .optional()
+    .or(z.literal("")),
 })
 
 interface UserFormDialogProps {
@@ -56,7 +59,9 @@ export function UserFormDialog({
 }: UserFormDialogProps) {
   const isEdit = !!user
 
-  const form = useForm<z.infer<typeof createSchema> | z.infer<typeof editSchema>>({
+  const form = useForm<
+    z.infer<typeof createSchema> | z.infer<typeof editSchema>
+  >({
     resolver: zodResolver(isEdit ? editSchema : createSchema),
     defaultValues: {
       username: "",
@@ -85,7 +90,9 @@ export function UserFormDialog({
     }
   }, [open, user, form])
 
-  const handleSubmit = async (data: z.infer<typeof createSchema> | z.infer<typeof editSchema>) => {
+  const handleSubmit = async (
+    data: z.infer<typeof createSchema> | z.infer<typeof editSchema>
+  ) => {
     if (isEdit) {
       const editData = data as z.infer<typeof editSchema>
       const updateData: UserUpdate = {
@@ -116,66 +123,78 @@ export function UserFormDialog({
             {isEdit ? "修改用户信息" : "创建一个新用户账户"}
           </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(handleSubmit)}>
+          <FieldGroup>
             {!isEdit && (
-              <FormField
+              <Controller
                 control={form.control as never}
                 name="username"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>用户名</FormLabel>
-                    <FormControl>
-                      <Input placeholder="请输入用户名" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="user-username">用户名</FieldLabel>
+                    <Input
+                      id="user-username"
+                      autoComplete="off"
+                      placeholder="请输入用户名"
+                      aria-invalid={fieldState.invalid}
+                      {...field}
+                    />
+                    <FieldError errors={[fieldState.error]} />
+                  </Field>
                 )}
               />
             )}
-            <FormField
+            <Controller
               control={form.control as never}
               name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>邮箱</FormLabel>
-                  <FormControl>
-                    <Input type="email" placeholder="请输入邮箱" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="user-email">邮箱</FieldLabel>
+                  <Input
+                    id="user-email"
+                    type="email"
+                    placeholder="请输入邮箱"
+                    aria-invalid={fieldState.invalid}
+                    {...field}
+                  />
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
               )}
             />
-            <FormField
+            <Controller
               control={form.control as never}
               name="nickname"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>昵称</FormLabel>
-                  <FormControl>
-                    <Input placeholder="请输入昵称" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="user-nickname">昵称</FieldLabel>
+                  <Input
+                    id="user-nickname"
+                    placeholder="请输入昵称"
+                    aria-invalid={fieldState.invalid}
+                    {...field}
+                  />
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
               )}
             />
-            <FormField
+            <Controller
               control={form.control as never}
               name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="user-password">
                     {isEdit ? "新密码（留空则不修改）" : "密码"}
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      type="password"
-                      placeholder={isEdit ? "留空则不修改" : "请输入密码"}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+                  </FieldLabel>
+                  <Input
+                    id="user-password"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder={isEdit ? "留空则不修改" : "请输入密码"}
+                    aria-invalid={fieldState.invalid}
+                    {...field}
+                  />
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
               )}
             />
             <DialogFooter>
@@ -188,8 +207,8 @@ export function UserFormDialog({
               </Button>
               <Button type="submit">确定</Button>
             </DialogFooter>
-          </form>
-        </Form>
+          </FieldGroup>
+        </form>
       </DialogContent>
     </Dialog>
   )

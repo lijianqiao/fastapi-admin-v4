@@ -56,10 +56,26 @@ export function DashboardPage() {
   }, [])
 
   const stats = [
-    { label: "用户总数", value: data?.stats.user_count ?? 0, icon: UserMultipleIcon, color: "text-blue-500" },
-    { label: "角色总数", value: data?.stats.role_count ?? 0, icon: Shield02Icon, color: "text-green-500" },
-    { label: "权限总数", value: data?.stats.permission_count ?? 0, icon: Key02Icon, color: "text-purple-500" },
-    { label: "启用用户", value: data?.stats.active_user_count ?? 0, icon: UserCheck02Icon, color: "text-orange-500" },
+    {
+      label: "用户总数",
+      value: data?.stats.user_count ?? 0,
+      icon: UserMultipleIcon,
+    },
+    {
+      label: "角色总数",
+      value: data?.stats.role_count ?? 0,
+      icon: Shield02Icon,
+    },
+    {
+      label: "权限总数",
+      value: data?.stats.permission_count ?? 0,
+      icon: Key02Icon,
+    },
+    {
+      label: "启用用户",
+      value: data?.stats.active_user_count ?? 0,
+      icon: UserCheck02Icon,
+    },
   ]
 
   return (
@@ -72,9 +88,9 @@ export function DashboardPage() {
           const Icon = stat.icon
           return (
             <Card key={stat.label}>
-              <CardContent className="flex items-center gap-4 p-6">
-                <div className={`flex size-12 items-center justify-center rounded-lg bg-muted ${stat.color}`}>
-                  <Icon className="size-6" />
+              <CardContent className="flex items-center gap-4">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground [&_svg]:size-6">
+                  <Icon />
                 </div>
                 <div>
                   {isLoading ? (
@@ -100,9 +116,9 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-full" />
+              <div className="flex flex-col gap-2">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <Skeleton key={index} className="h-8 w-full" />
                 ))}
               </div>
             ) : (
@@ -135,7 +151,10 @@ export function DashboardPage() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                      <TableCell
+                        colSpan={4}
+                        className="text-center text-muted-foreground"
+                      >
                         暂无记录
                       </TableCell>
                     </TableRow>
@@ -154,15 +173,18 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
             <Button onClick={() => navigate(ROUTES.USERS)} variant="outline">
-              <PlusSignIcon className="size-4" />
+              <PlusSignIcon data-icon="inline-start" />
               新增用户
             </Button>
             <Button onClick={() => navigate(ROUTES.ROLES)} variant="outline">
-              <PlusSignIcon className="size-4" />
+              <PlusSignIcon data-icon="inline-start" />
               新增角色
             </Button>
-            <Button onClick={() => navigate(ROUTES.PERMISSIONS)} variant="outline">
-              <PlusSignIcon className="size-4" />
+            <Button
+              onClick={() => navigate(ROUTES.PERMISSIONS)}
+              variant="outline"
+            >
+              <PlusSignIcon data-icon="inline-start" />
               管理权限
             </Button>
             <Button onClick={() => navigate(ROUTES.AUDIT)} variant="outline">

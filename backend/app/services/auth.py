@@ -11,6 +11,7 @@ from time import monotonic
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from app.core.config import settings
 from app.core.security import (
@@ -47,11 +48,22 @@ class SessionTokens:
     family_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class AuthorizedUser:
+    """一次查询同时得到的会话有效用户与其权限判定结果。"""
+
+    user: User
+    has_permission: bool
+
+
 class LoginRateLimiter:
     """单进程滑动窗口限流器。
 
-    这是应用侧的安全兜底。多 worker/多实例生产部署仍需在网关或共享存储层限流。
+    这是应用侧的安全兜底。多 worker/多实例生产部署仍需在网关或共享存储层限流：
+    进程内表容量有界，持续泛洪会淘汰最久未使用的窗口，攻击者因此可以重置自己的计数。
     """
+
+    _MAX_ENTRIES = 4096
 
     def __init__(self, attempts: int, window_seconds: int) -> None:
         self._attempts = attempts
@@ -71,42 +83,42 @@ class LoginRateLimiter:
 
     async def hit(self, client_ip: str, identifier: str) -> int | None:
         """Record one attempt and enforce both account/IP and IP-wide windows."""
-        pair_key = self._key("pair", client_ip, identifier)
-        ip_key = self._key("ip", client_ip)
-        account_key = self._key("account", "all", identifier)
+        limits = (
+            (self._key("pair", client_ip, identifier), self._attempts),
+            (self._key("ip", client_ip), self._ip_attempts),
+            (self._key("account", "all", identifier), self._account_attempts),
+        )
         now = monotonic()
         cutoff = now - self._window_seconds
 
         async with self._lock:
-            keys = (pair_key, ip_key, account_key)
-            new_key_count = sum(key not in self._entries for key in keys)
-            if len(self._entries) + new_key_count > 4096:
-                self._remove_stale_entries(cutoff)
-                new_key_count = sum(key not in self._entries for key in keys)
-            if len(self._entries) + new_key_count > 4096:
-                return self._window_seconds
-
-            windows = (
-                (self._entries.setdefault(pair_key, deque()), self._attempts),
-                (self._entries.setdefault(ip_key, deque()), self._ip_attempts),
-                (self._entries.setdefault(account_key, deque()), self._account_attempts),
-            )
+            # Evaluate every window before touching the table. A rejected attempt
+            # must not allocate an entry, otherwise one IP can fill the table with
+            # throttled requests and deny logins to accounts it never touched.
             retry_after = 0
-            for attempts, limit in windows:
+            for key, limit in limits:
+                attempts = self._entries.get(key)
+                if attempts is None:
+                    continue
                 while attempts and attempts[0] <= cutoff:
                     attempts.popleft()
+                if not attempts:
+                    del self._entries[key]
+                    continue
                 if len(attempts) >= limit:
                     retry_after = max(
                         retry_after,
                         max(1, math.ceil(attempts[0] + self._window_seconds - now)),
                     )
             if retry_after:
-                if not windows[0][0]:
-                    self._entries.pop(pair_key, None)
                 return retry_after
 
-            for attempts, _ in windows:
+            self._evict_until_room(len(limits), cutoff)
+            for key, _ in limits:
+                attempts = self._entries.pop(key, None) or deque()
                 attempts.append(now)
+                # Re-inserting moves the key to the end, so dict order is LRU order.
+                self._entries[key] = attempts
             return None
 
     async def clear(self, client_ip: str, identifier: str) -> None:
@@ -125,6 +137,18 @@ class LoginRateLimiter:
         """Clear process-local state; used when isolating application test cases."""
         async with self._lock:
             self._entries.clear()
+
+    def _evict_until_room(self, required: int, cutoff: float) -> None:
+        """Bound the table by dropping expired windows, then the least recent ones.
+
+        Evicting is deliberately preferred over rejecting: a full table must never
+        turn into a login outage for accounts that have not attempted a login yet.
+        """
+        if len(self._entries) + required <= self._MAX_ENTRIES:
+            return
+        self._remove_stale_entries(cutoff)
+        while self._entries and len(self._entries) + required > self._MAX_ENTRIES:
+            self._entries.pop(next(iter(self._entries)))
 
     def _remove_stale_entries(self, cutoff: float) -> None:
         stale_keys = [
@@ -325,15 +349,14 @@ async def is_session_family_active(
     return (await db.execute(stmt)).scalar_one_or_none() is not None
 
 
-async def get_active_session_user(
-    db: AsyncSession,
+def _active_session_statement(
     *,
     user_id: int,
     family_id: str,
     token_version: int,
-) -> User | None:
-    """Validate the account and access-token family in one round trip."""
-    stmt = (
+) -> Select[tuple[User]]:
+    """Build the shared account + access-token-family validity condition."""
+    return (
         select(User)
         .join(RefreshSessionFamily, RefreshSessionFamily.user_id == User.id)
         .where(
@@ -347,7 +370,48 @@ async def get_active_session_user(
             RefreshSessionFamily.expires_at > datetime.now(UTC),
         )
     )
+
+
+async def get_active_session_user(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    family_id: str,
+    token_version: int,
+) -> User | None:
+    """Validate the account and access-token family in one round trip."""
+    stmt = _active_session_statement(
+        user_id=user_id,
+        family_id=family_id,
+        token_version=token_version,
+    )
     return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def get_authorized_session_user(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    family_id: str,
+    token_version: int,
+    permission_code: str,
+) -> AuthorizedUser | None:
+    """Resolve session validity and one permission grant in a single query.
+
+    Returning both answers separately keeps 401 (session unusable) distinguishable
+    from 403 (session fine, permission missing) while halving the round trips a
+    protected endpoint needs.
+    """
+    stmt = _active_session_statement(
+        user_id=user_id,
+        family_id=family_id,
+        token_version=token_version,
+    ).add_columns(user_crud.permission_exists(user_id, permission_code))
+    row = (await db.execute(stmt)).first()
+    if row is None:
+        return None
+    user, has_permission = row[0], bool(row[1])
+    return AuthorizedUser(user=user, has_permission=has_permission)
 
 
 async def revoke_refresh_session(
@@ -403,12 +467,19 @@ async def revoke_all_refresh_sessions(
     *,
     reason: str = "user_security_change",
 ) -> None:
-    """Lock the user first, then revoke every family in the shared lock order."""
-    # Persist caller-side token_version/state changes before populate_existing
-    # reloads the lock row (AsyncSession autoflush is intentionally disabled).
+    """Lock the user, bump their token version, then revoke every family.
+
+    Bumping ``token_version`` here is what invalidates already-issued access
+    tokens. Callers must not increment it themselves: doing both would advance the
+    version twice and the two steps could drift apart.
+    """
+    # Persist caller-side state changes before populate_existing reloads the lock
+    # row (AsyncSession autoflush is intentionally disabled).
     await db.flush()
-    if await _get_user_for_update(db, user_id) is None:
+    user = await _get_user_for_update(db, user_id)
+    if user is None:
         return
+    user.token_version += 1
     await db.execute(
         update(RefreshSessionFamily)
         .where(

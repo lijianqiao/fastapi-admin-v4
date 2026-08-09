@@ -4,7 +4,11 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function ScrollArea({ className, children, ...props }: React.ComponentProps<"div">) {
+function ScrollArea({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="scroll-area"
@@ -20,7 +24,7 @@ function ScrollBar({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="scroll-bar"
-      className={cn("flex touch-none select-none transition-colors", className)}
+      className={cn("flex touch-none transition-colors select-none", className)}
       {...props}
     />
   )

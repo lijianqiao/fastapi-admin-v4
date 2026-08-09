@@ -7,8 +7,9 @@ from app.crud.role import role_crud
 from app.crud.user import user_crud
 
 __all__ = [
-    "user_crud",
-    "role_crud",
-    "permission_crud",
     "audit_log_crud",
+    "dashboard_crud",
+    "permission_crud",
+    "role_crud",
+    "user_crud",
 ]

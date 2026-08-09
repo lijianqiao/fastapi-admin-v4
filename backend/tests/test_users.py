@@ -1,5 +1,7 @@
 """User API regression tests."""
 
+from collections.abc import Awaitable, Callable
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -13,6 +15,7 @@ from tests.assertions import assert_error
 pytestmark = pytest.mark.asyncio
 
 type Headers = dict[str, str]
+type LoginUser = Callable[[str, str], Awaitable[Headers]]
 
 
 async def test_list_users(
@@ -133,6 +136,36 @@ async def test_disable_user_increments_version_and_revokes_existing_session(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: Headers,
+    login_user: LoginUser,
+) -> None:
+    target = User(
+        username="todisable",
+        email="todisable@example.com",
+        hashed_password=hash_password("disablepassword123"),
+    )
+    db_session.add(target)
+    await db_session.commit()
+    target_headers = await login_user(target.username, "disablepassword123")
+
+    response = await client.patch(
+        f"/api/v1/users/{target.id}",
+        json={"is_active": False},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+
+    access_response = await client.get("/api/v1/me", headers=target_headers)
+    assert_error(access_response, 401)
+
+    await db_session.refresh(target)
+    assert target.token_version == 1
+    assert target.is_active is False
+
+
+async def test_cannot_disable_current_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: Headers,
     test_user: User,
 ) -> None:
     response = await client.patch(
@@ -140,14 +173,11 @@ async def test_disable_user_increments_version_and_revokes_existing_session(
         json={"is_active": False},
         headers=auth_headers,
     )
-    assert response.status_code == 200, response.text
 
-    access_response = await client.get("/api/v1/me", headers=auth_headers)
-    assert_error(access_response, 401)
-
+    assert_error(response, 400)
     await db_session.refresh(test_user)
-    assert test_user.token_version == 1
-    assert test_user.is_active is False
+    assert test_user.is_active is True
+    assert test_user.token_version == 0
 
 
 async def test_delete_user(

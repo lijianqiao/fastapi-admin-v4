@@ -50,23 +50,29 @@ class CRUDAuditLog:
         limit: int = 20,
     ) -> tuple[list[AuditLogItem], int]:
         """Return a stable audit page with the actor's current username."""
-        stmt = select(
-            AuditLog.id,
-            AuditLog.user_id,
-            User.username.label("username"),
-            AuditLog.action,
-            AuditLog.target,
-            AuditLog.detail,
-            AuditLog.ip,
-            AuditLog.created_at,
-        ).outerjoin(User, AuditLog.user_id == User.id)
-
+        filters = []
         if user_id is not None:
-            stmt = stmt.where(AuditLog.user_id == user_id)
+            filters.append(AuditLog.user_id == user_id)
         if action:
-            stmt = stmt.where(AuditLog.action == action)
+            filters.append(AuditLog.action == action)
 
-        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
+        stmt = (
+            select(
+                AuditLog.id,
+                AuditLog.user_id,
+                User.username.label("username"),
+                AuditLog.action,
+                AuditLog.target,
+                AuditLog.detail,
+                AuditLog.ip,
+                AuditLog.created_at,
+            )
+            .outerjoin(User, AuditLog.user_id == User.id)
+            .where(*filters)
+        )
+
+        # The username join only decorates the page; counting must not pay for it.
+        count_stmt = select(func.count()).select_from(AuditLog).where(*filters)
         total_result = await db.execute(count_stmt)
         total = total_result.scalar_one()
 

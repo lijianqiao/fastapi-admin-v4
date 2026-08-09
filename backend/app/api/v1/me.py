@@ -11,8 +11,8 @@ from app.models.user import User
 from app.schemas.common import ResponseEnvelope, success_response
 from app.schemas.user import (
     ChangePasswordRequest,
+    CurrentUserResponse,
     UpdateProfileRequest,
-    UserWithRoles,
 )
 from app.services.auth import revoke_all_refresh_sessions
 from app.utils.audit import log_audit
@@ -20,26 +20,34 @@ from app.utils.audit import log_audit
 router = APIRouter()
 
 
-@router.get("", response_model=ResponseEnvelope[UserWithRoles])
+async def _current_user_payload(db: AsyncSession, user: User) -> CurrentUserResponse:
+    """Serialize an own-profile response together with its permission codes."""
+    payload = CurrentUserResponse.model_validate(user)
+    return payload.model_copy(
+        update={"permissions": await user_crud.get_permission_codes(db, user.id)}
+    )
+
+
+@router.get("", response_model=ResponseEnvelope[CurrentUserResponse])
 async def get_profile(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ResponseEnvelope[UserWithRoles]:
-    """Return the current user with active roles eagerly loaded."""
+) -> ResponseEnvelope[CurrentUserResponse]:
+    """Return the current user with active roles and effective permission codes."""
     user = await user_crud.get_with_roles(db, current_user.id)
     if user is None:  # defensive against a concurrent deletion
         raise HTTPException(status_code=401, detail="用户不存在")
-    return success_response(UserWithRoles.model_validate(user))
+    return success_response(await _current_user_payload(db, user))
 
 
-@router.patch("", response_model=ResponseEnvelope[UserWithRoles])
-@router.put("", response_model=ResponseEnvelope[UserWithRoles], deprecated=True)
+@router.patch("", response_model=ResponseEnvelope[CurrentUserResponse])
+@router.put("", response_model=ResponseEnvelope[CurrentUserResponse], deprecated=True)
 async def update_profile(
     profile_in: UpdateProfileRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ResponseEnvelope[UserWithRoles]:
+) -> ResponseEnvelope[CurrentUserResponse]:
     """Partially update the current user's mutable profile fields."""
     if profile_in.email is not None and str(profile_in.email) != current_user.email:
         existing = await user_crud.get_by_email_any(db, str(profile_in.email))
@@ -62,7 +70,7 @@ async def update_profile(
         ip=get_client_ip(request),
     )
     await db.commit()
-    return success_response(UserWithRoles.model_validate(user), message="更新成功")
+    return success_response(await _current_user_payload(db, user), message="更新成功")
 
 
 @router.put("/password", response_model=ResponseEnvelope[None])

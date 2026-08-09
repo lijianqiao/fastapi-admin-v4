@@ -11,15 +11,12 @@ import {
   PlusSignIcon,
   PencilEdit02Icon,
   Delete02Icon,
+  Key02Icon,
+  MoreHorizontalIcon,
 } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -31,22 +28,32 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form"
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -64,12 +71,9 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog"
 import api from "@/lib/api"
 import { usePermission } from "@/hooks/use-permission"
 import { PERMISSIONS } from "@/lib/constants"
-import type {
-  GroupedPermissions,
-  Permission,
-} from "@/types/permission"
+import type { GroupedPermissions, Permission } from "@/types/permission"
 
-import { useForm } from "react-hook-form"
+import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 
@@ -117,7 +121,11 @@ export function PermissionsPage() {
     fetchPermissions()
   }, [fetchPermissions])
 
-  const modules = Object.keys(grouped)
+  // base-ui 的 Select 需要 items 才能在受控赋值时渲染选中项文案
+  const moduleItems = [
+    { label: "全部模块", value: "all" },
+    ...Object.keys(grouped).map((mod) => ({ label: mod, value: mod })),
+  ]
 
   const filteredGrouped: GroupedPermissions = (() => {
     const result: GroupedPermissions = {}
@@ -127,8 +135,7 @@ export function PermissionsPage() {
         if (!search) return true
         const s = search.toLowerCase()
         return (
-          p.name.toLowerCase().includes(s) ||
-          p.code.toLowerCase().includes(s)
+          p.name.toLowerCase().includes(s) || p.code.toLowerCase().includes(s)
         )
       })
       if (filtered.length > 0) {
@@ -191,7 +198,7 @@ export function PermissionsPage() {
         actions={
           hasPermission(PERMISSIONS.PERMISSION_CREATE) && (
             <Button onClick={handleCreate}>
-              <PlusSignIcon className="size-4" />
+              <PlusSignIcon data-icon="inline-start" />
               新增权限
             </Button>
           )
@@ -207,32 +214,56 @@ export function PermissionsPage() {
           className="sm:max-w-xs"
         />
         <Select
+          items={moduleItems}
           value={moduleFilter}
-          onValueChange={setModuleFilter}
+          onValueChange={(value) => setModuleFilter(value ?? "all")}
         >
-          <SelectTrigger className="sm:w-40">
-            <SelectValue placeholder="模块筛选" />
+          <SelectTrigger className="sm:w-40" aria-label="模块筛选">
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部模块</SelectItem>
-            {modules.map((mod) => (
-              <SelectItem key={mod} value={mod}>
-                {mod}
-              </SelectItem>
-            ))}
+            <SelectGroup>
+              {moduleItems.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
       {/* 按模块分组展示 */}
       {isLoading ? (
-        <div className="text-center text-muted-foreground">加载中...</div>
-      ) : Object.keys(filteredGrouped).length === 0 ? (
-        <div className="rounded-lg border p-8 text-center text-muted-foreground">
-          暂无权限数据
+        <div className="flex flex-col gap-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-40 w-full" />
+          ))}
         </div>
+      ) : Object.keys(filteredGrouped).length === 0 ? (
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Key02Icon />
+            </EmptyMedia>
+            <EmptyTitle>暂无权限数据</EmptyTitle>
+            <EmptyDescription>
+              {search || moduleFilter !== "all"
+                ? "没有匹配当前筛选条件的权限，请调整搜索词或模块。"
+                : "系统还没有定义任何权限，先创建一个权限定义。"}
+            </EmptyDescription>
+          </EmptyHeader>
+          {hasPermission(PERMISSIONS.PERMISSION_CREATE) && (
+            <EmptyContent>
+              <Button onClick={handleCreate}>
+                <PlusSignIcon data-icon="inline-start" />
+                新增权限
+              </Button>
+            </EmptyContent>
+          )}
+        </Empty>
       ) : (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           {Object.entries(filteredGrouped).map(([moduleName, perms]) => (
             <Card key={moduleName}>
               <CardHeader>
@@ -271,32 +302,44 @@ export function PermissionsPage() {
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon-sm">
-                                <PencilEdit02Icon className="size-4" />
-                              </Button>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label="更多操作"
+                                />
+                              }
+                            >
+                              <MoreHorizontalIcon />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              {hasPermission(PERMISSIONS.PERMISSION_UPDATE) && (
-                                <DropdownMenuItem
-                                  onClick={() => handleEdit(perm)}
-                                >
-                                  <PencilEdit02Icon className="size-4" />
-                                  <span>编辑</span>
-                                </DropdownMenuItem>
-                              )}
-                              {hasPermission(PERMISSIONS.PERMISSION_DELETE) && (
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setDeletePerm(perm)
-                                    setDeleteOpen(true)
-                                  }}
-                                  className="text-destructive"
-                                >
-                                  <Delete02Icon className="size-4" />
-                                  <span>删除</span>
-                                </DropdownMenuItem>
-                              )}
+                              <DropdownMenuGroup>
+                                {hasPermission(
+                                  PERMISSIONS.PERMISSION_UPDATE
+                                ) && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleEdit(perm)}
+                                  >
+                                    <PencilEdit02Icon />
+                                    <span>编辑</span>
+                                  </DropdownMenuItem>
+                                )}
+                                {hasPermission(
+                                  PERMISSIONS.PERMISSION_DELETE
+                                ) && (
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setDeletePerm(perm)
+                                      setDeleteOpen(true)
+                                    }}
+                                    className="text-destructive"
+                                  >
+                                    <Delete02Icon />
+                                    <span>删除</span>
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuGroup>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -314,76 +357,84 @@ export function PermissionsPage() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {editingPerm ? "编辑权限" : "新增权限"}
-            </DialogTitle>
+            <DialogTitle>{editingPerm ? "编辑权限" : "新增权限"}</DialogTitle>
             <DialogDescription>
               {editingPerm ? "修改权限信息" : "创建一个新的权限定义"}
             </DialogDescription>
           </DialogHeader>
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleSubmit)}
-              className="space-y-4"
-            >
-              <FormField
+          <form onSubmit={form.handleSubmit(handleSubmit)}>
+            <FieldGroup>
+              <Controller
                 control={form.control}
                 name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>权限名称</FormLabel>
-                    <FormControl>
-                      <Input placeholder="如：查看用户" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="permission-name">权限名称</FieldLabel>
+                    <Input
+                      id="permission-name"
+                      placeholder="如：查看用户"
+                      aria-invalid={fieldState.invalid}
+                      {...field}
+                    />
+                    <FieldError errors={[fieldState.error]} />
+                  </Field>
                 )}
               />
-              <FormField
+              <Controller
                 control={form.control}
                 name="code"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>权限码</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="如：user:read"
-                        className="font-mono"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="permission-code">权限码</FieldLabel>
+                    <Input
+                      id="permission-code"
+                      placeholder="如：user:read"
+                      className="font-mono"
+                      aria-invalid={fieldState.invalid}
+                      {...field}
+                    />
+                    <FieldDescription>
+                      格式为 <code>模块:动作</code>，如 <code>user:read</code>。
+                    </FieldDescription>
+                    <FieldError errors={[fieldState.error]} />
+                  </Field>
                 )}
               />
-              <FormField
+              <Controller
                 control={form.control}
                 name="module"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>所属模块</FormLabel>
-                    <FormControl>
-                      <Input placeholder="如：用户管理" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="permission-module">
+                      所属模块
+                    </FieldLabel>
+                    <Input
+                      id="permission-module"
+                      placeholder="如：用户管理"
+                      aria-invalid={fieldState.invalid}
+                      {...field}
+                    />
+                    <FieldError errors={[fieldState.error]} />
+                  </Field>
                 )}
               />
-              <FormField
+              <Controller
                 control={form.control}
                 name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>描述</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="权限描述（选填）"
-                        className="resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="permission-description">
+                      描述
+                    </FieldLabel>
+                    <Textarea
+                      id="permission-description"
+                      placeholder="权限描述（选填）"
+                      className="resize-none"
+                      aria-invalid={fieldState.invalid}
+                      {...field}
+                    />
+                    <FieldError errors={[fieldState.error]} />
+                  </Field>
                 )}
               />
               <DialogFooter>
@@ -396,8 +447,8 @@ export function PermissionsPage() {
                 </Button>
                 <Button type="submit">确定</Button>
               </DialogFooter>
-            </form>
-          </Form>
+            </FieldGroup>
+          </form>
         </DialogContent>
       </Dialog>
 

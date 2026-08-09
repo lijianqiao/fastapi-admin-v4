@@ -5,7 +5,16 @@
 
 import { Component, type ErrorInfo, type ReactNode } from "react"
 
+import { Cancel01Icon } from "@/lib/icons"
 import { Button } from "@/components/ui/button"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -17,7 +26,10 @@ interface ErrorBoundaryState {
   error: Error | null
 }
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   constructor(props: ErrorBoundaryProps) {
     super(props)
     this.state = { hasError: false, error: null }
@@ -42,14 +54,21 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       }
 
       return (
-        <div className="flex h-svh flex-col items-center justify-center gap-4 p-6">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold">页面出错了</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {this.state.error?.message || "发生了一个未知错误"}
-            </p>
-          </div>
-          <Button onClick={this.handleReset}>重试</Button>
+        <div className="flex h-svh items-center justify-center p-6">
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Cancel01Icon />
+              </EmptyMedia>
+              <EmptyTitle>页面出错了</EmptyTitle>
+              <EmptyDescription>
+                {this.state.error?.message || "发生了一个未知错误"}
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button onClick={this.handleReset}>重试</Button>
+            </EmptyContent>
+          </Empty>
         </div>
       )
     }

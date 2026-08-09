@@ -1,7 +1,7 @@
 /** 角色新增/编辑表单对话框 */
 
 import { useEffect } from "react"
-import { useForm } from "react-hook-form"
+import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 
@@ -15,13 +15,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form"
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import type { Role, RoleCreate, RoleUpdate } from "@/types/role"
@@ -89,36 +87,39 @@ export function RoleFormDialog({
             {isEdit ? "修改角色信息" : "创建一个新角色"}
           </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <FormField
+        <form onSubmit={form.handleSubmit(handleSubmit)}>
+          <FieldGroup>
+            <Controller
               control={form.control}
               name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>角色名称</FormLabel>
-                  <FormControl>
-                    <Input placeholder="请输入角色名称" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="role-name">角色名称</FieldLabel>
+                  <Input
+                    id="role-name"
+                    placeholder="请输入角色名称"
+                    aria-invalid={fieldState.invalid}
+                    {...field}
+                  />
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
               )}
             />
-            <FormField
+            <Controller
               control={form.control}
               name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>描述</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="请输入角色描述（选填）"
-                      className="resize-none"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="role-description">描述</FieldLabel>
+                  <Textarea
+                    id="role-description"
+                    placeholder="请输入角色描述（选填）"
+                    className="resize-none"
+                    aria-invalid={fieldState.invalid}
+                    {...field}
+                  />
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
               )}
             />
             <DialogFooter>
@@ -131,8 +132,8 @@ export function RoleFormDialog({
               </Button>
               <Button type="submit">确定</Button>
             </DialogFooter>
-          </form>
-        </Form>
+          </FieldGroup>
+        </form>
       </DialogContent>
     </Dialog>
   )

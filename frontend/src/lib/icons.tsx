@@ -34,12 +34,13 @@ import {
   Delete02Icon as Delete02,
   MoreHorizontalIcon as MoreHorizontal,
   UserAdd02Icon as UserAssign02,
+  InboxIcon as Inbox,
 } from "@hugeicons/core-free-icons"
 
 type IconProps = Omit<ComponentProps<typeof HugeiconsIcon>, "icon">
 
 function makeIcon(
-  iconDef: NonNullable<ComponentProps<typeof HugeiconsIcon>["icon"]>,
+  iconDef: NonNullable<ComponentProps<typeof HugeiconsIcon>["icon"]>
 ): FC<IconProps> {
   return function IconComponent({ size = 24, ...props }: IconProps) {
     return <HugeiconsIcon icon={iconDef} size={size} {...props} />
@@ -71,3 +72,4 @@ export const PencilEdit02Icon = makeIcon(PencilEdit02)
 export const Delete02Icon = makeIcon(Delete02)
 export const MoreHorizontalIcon = makeIcon(MoreHorizontal)
 export const UserAssign02Icon = makeIcon(UserAssign02)
+export const InboxIcon = makeIcon(Inbox)

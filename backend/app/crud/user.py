@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import Exists, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -290,9 +290,14 @@ class CRUDUser(CRUDBase[User]):
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def has_permission(self, db: AsyncSession, user_id: int, code: str) -> bool:
-        """Check one permission through active roles without loading the full set."""
-        permission_exists = exists(
+    @staticmethod
+    def permission_exists(user_id: int, code: str) -> Exists:
+        """Build the EXISTS clause granting one permission through active roles.
+
+        Exposed as a clause so callers can fold the authorization check into an
+        existing statement instead of paying a second round trip.
+        """
+        return exists(
             select(Permission.id)
             .join(role_permissions, role_permissions.c.permission_id == Permission.id)
             .join(Role, Role.id == role_permissions.c.role_id)
@@ -304,7 +309,10 @@ class CRUDUser(CRUDBase[User]):
                 Permission.is_deleted.is_(False),
             )
         )
-        return bool(await db.scalar(select(permission_exists)))
+
+    async def has_permission(self, db: AsyncSession, user_id: int, code: str) -> bool:
+        """Check one permission through active roles without loading the full set."""
+        return bool(await db.scalar(select(self.permission_exists(user_id, code))))
 
     async def _lock_active_superuser_ids(self, db: AsyncSession) -> list[int]:
         """Serialize operations that can remove an active superuser."""
@@ -349,7 +357,8 @@ class CRUDUser(CRUDBase[User]):
 
         Locking before verification makes two concurrent requests using the same
         old password serialize: after the first commits, the second verifies
-        against the new hash and fails.
+        against the new hash and fails. The caller must follow up with
+        ``revoke_all_refresh_sessions``, which owns the ``token_version`` bump.
         """
         stmt = (
             select(User)
@@ -367,7 +376,6 @@ class CRUDUser(CRUDBase[User]):
             return False
 
         user.hashed_password = await hash_password_async(new_password)
-        user.token_version += 1
         await db.flush()
         return True
 

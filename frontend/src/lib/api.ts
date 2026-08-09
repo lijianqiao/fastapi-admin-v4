@@ -4,7 +4,10 @@
  * - 响应拦截器：401 自动刷新 token，失败跳转登录
  */
 
-import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from "axios"
+import axios, {
+  type AxiosInstance,
+  type InternalAxiosRequestConfig,
+} from "axios"
 
 import { ROUTES } from "@/lib/constants"
 
@@ -38,12 +41,15 @@ api.interceptors.request.use(
     }
     return config
   },
-  (error) => Promise.reject(error),
+  (error) => Promise.reject(error)
 )
 
 // ===== 响应拦截器：401 自动刷新 token =====
 let isRefreshing = false
-let failedQueue: Array<{ resolve: () => void; reject: (error: unknown) => void }> = []
+let failedQueue: Array<{
+  resolve: (value?: unknown) => void
+  reject: (error: unknown) => void
+}> = []
 
 function processQueue(error: unknown): void {
   failedQueue.forEach((prom) => {
@@ -88,7 +94,11 @@ api.interceptors.response.use(
     isRefreshing = true
 
     try {
-      const response = await axios.post(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true })
+      const response = await axios.post(
+        `${BASE_URL}/auth/refresh`,
+        {},
+        { withCredentials: true }
+      )
       const newToken = response.data?.data?.access_token
       if (newToken) {
         setAccessToken(newToken)
@@ -105,7 +115,7 @@ api.interceptors.response.use(
     } finally {
       isRefreshing = false
     }
-  },
+  }
 )
 
 export default api

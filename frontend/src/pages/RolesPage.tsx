@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -45,7 +46,9 @@ export function RolesPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   const [formOpen, setFormOpen] = useState(false)
-  const [editingRole, setEditingRole] = useState<RoleWithPermissions | null>(null)
+  const [editingRole, setEditingRole] = useState<RoleWithPermissions | null>(
+    null
+  )
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignRole, setAssignRole] = useState<RoleWithPermissions | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -138,9 +141,7 @@ export function RolesPage() {
         id: "user_count",
         header: "关联用户",
         cell: ({ row }) => (
-          <Badge variant="outline">
-            {row.original.user_count ?? 0}
-          </Badge>
+          <Badge variant="outline">{row.original.user_count ?? 0}</Badge>
         ),
       },
       {
@@ -154,52 +155,56 @@ export function RolesPage() {
         header: "操作",
         cell: ({ row }) => (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm">
-                <MoreHorizontalIcon className="size-4" />
-              </Button>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon-sm" aria-label="更多操作" />
+              }
+            >
+              <MoreHorizontalIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {hasPermission(PERMISSIONS.ROLE_UPDATE) && (
-                <DropdownMenuItem
-                  onClick={() => {
-                    setEditingRole(row.original)
-                    setFormOpen(true)
-                  }}
-                >
-                  <PencilEdit02Icon className="size-4" />
-                  <span>编辑</span>
-                </DropdownMenuItem>
-              )}
-              {hasPermission(PERMISSIONS.ROLE_ASSIGN) && (
-                <DropdownMenuItem
-                  onClick={() => {
-                    setAssignRole(row.original)
-                    setAssignOpen(true)
-                  }}
-                >
-                  <Key02Icon className="size-4" />
-                  <span>分配权限</span>
-                </DropdownMenuItem>
-              )}
-              {hasPermission(PERMISSIONS.ROLE_DELETE) && (
-                <DropdownMenuItem
-                  onClick={() => {
-                    setDeleteRole(row.original)
-                    setDeleteOpen(true)
-                  }}
-                  className="text-destructive"
-                >
-                  <Delete02Icon className="size-4" />
-                  <span>删除</span>
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuGroup>
+                {hasPermission(PERMISSIONS.ROLE_UPDATE) && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setEditingRole(row.original)
+                      setFormOpen(true)
+                    }}
+                  >
+                    <PencilEdit02Icon />
+                    <span>编辑</span>
+                  </DropdownMenuItem>
+                )}
+                {hasPermission(PERMISSIONS.ROLE_ASSIGN) && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setAssignRole(row.original)
+                      setAssignOpen(true)
+                    }}
+                  >
+                    <Key02Icon />
+                    <span>分配权限</span>
+                  </DropdownMenuItem>
+                )}
+                {hasPermission(PERMISSIONS.ROLE_DELETE) && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setDeleteRole(row.original)
+                      setDeleteOpen(true)
+                    }}
+                    className="text-destructive"
+                  >
+                    <Delete02Icon />
+                    <span>删除</span>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         ),
       },
     ],
-    [hasPermission],
+    [hasPermission]
   )
 
   return (
@@ -215,7 +220,7 @@ export function RolesPage() {
                 setFormOpen(true)
               }}
             >
-              <PlusSignIcon className="size-4" />
+              <PlusSignIcon data-icon="inline-start" />
               新增角色
             </Button>
           )

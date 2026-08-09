@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.schemas.common import ApiModel
 
@@ -58,8 +58,14 @@ class TokenResponse(ApiModel):
     expires_in: int = Field(gt=0, description="access token 剩余有效秒数")
 
 
-class TokenPayload(ApiModel):
-    """已验证 JWT 的强类型载荷。"""
+class TokenPayload(BaseModel):
+    """已验证 JWT 的强类型载荷。
+
+    不继承 ``ApiModel``：JWT 不是请求边界模型，禁止额外字段会让未来新增的
+    claim（如 ``nbf``、``scope``）直接把旧代码的解析打成无效 token。
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     sub: str = Field(min_length=1, description="用户 ID")
     exp: int = Field(description="过期时间戳")

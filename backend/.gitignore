@@ -8,6 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+.test_venv
 
-# alembic
-alembic/
+# 注意：不要忽略 alembic/。迁移脚本是数据库 schema 的唯一真源，必须纳入版本控制。

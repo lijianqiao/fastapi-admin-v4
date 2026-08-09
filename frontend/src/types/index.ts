@@ -1,10 +1,22 @@
 /** 类型统一导出 */
 
-export type { ApiResponse, PaginatedData, PaginatedResponse, ApiError, PaginationParams } from "./api"
-export type { LoginRequest, TokenResponse, RegisterRequest, UserInfo } from "./auth"
+export type {
+  ApiResponse,
+  PaginatedData,
+  PaginatedResponse,
+  ApiError,
+  PaginationParams,
+} from "./api"
+export type {
+  LoginRequest,
+  TokenResponse,
+  RegisterRequest,
+  UserInfo,
+} from "./auth"
 export type {
   User,
   UserWithRoles,
+  CurrentUser,
   UserCreate,
   UserUpdate,
   AssignRolesRequest,

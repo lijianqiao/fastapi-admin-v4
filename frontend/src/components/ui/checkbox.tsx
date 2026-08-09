@@ -1,6 +1,5 @@
 "use client"
 
-import * as React from "react"
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
 import { Tick02Icon } from "@/lib/icons"
 

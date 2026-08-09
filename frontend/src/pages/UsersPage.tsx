@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -27,6 +28,7 @@ import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -41,6 +43,13 @@ import api from "@/lib/api"
 import { usePermission } from "@/hooks/use-permission"
 import { PERMISSIONS } from "@/lib/constants"
 import type { UserCreate, UserUpdate, UserWithRoles } from "@/types/user"
+
+/** base-ui 的 Select 需要 items 才能在受控赋值时渲染选中项文案 */
+const STATUS_ITEMS = [
+  { label: "全部", value: "all" },
+  { label: "启用", value: "active" },
+  { label: "禁用", value: "inactive" },
+]
 
 export function UsersPage() {
   const { hasPermission } = usePermission()
@@ -190,39 +199,45 @@ export function UsersPage() {
         header: "操作",
         cell: ({ row }) => (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm">
-                <MoreHorizontalIcon className="size-4" />
-              </Button>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon-sm" aria-label="更多操作" />
+              }
+            >
+              <MoreHorizontalIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {hasPermission(PERMISSIONS.USER_UPDATE) && (
-                <DropdownMenuItem onClick={() => handleEdit(row.original)}>
-                  <PencilEdit02Icon className="size-4" />
-                  <span>编辑</span>
-                </DropdownMenuItem>
-              )}
-              {hasPermission(PERMISSIONS.USER_ASSIGN) && (
-                <DropdownMenuItem onClick={() => handleAssignRoles(row.original)}>
-                  <UserAssign02Icon className="size-4" />
-                  <span>分配角色</span>
-                </DropdownMenuItem>
-              )}
-              {hasPermission(PERMISSIONS.USER_DELETE) && (
-                <DropdownMenuItem
-                  onClick={() => handleDelete(row.original)}
-                  className="text-destructive"
-                >
-                  <Delete02Icon className="size-4" />
-                  <span>删除</span>
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuGroup>
+                {hasPermission(PERMISSIONS.USER_UPDATE) && (
+                  <DropdownMenuItem onClick={() => handleEdit(row.original)}>
+                    <PencilEdit02Icon />
+                    <span>编辑</span>
+                  </DropdownMenuItem>
+                )}
+                {hasPermission(PERMISSIONS.USER_ASSIGN) && (
+                  <DropdownMenuItem
+                    onClick={() => handleAssignRoles(row.original)}
+                  >
+                    <UserAssign02Icon />
+                    <span>分配角色</span>
+                  </DropdownMenuItem>
+                )}
+                {hasPermission(PERMISSIONS.USER_DELETE) && (
+                  <DropdownMenuItem
+                    onClick={() => handleDelete(row.original)}
+                    className="text-destructive"
+                  >
+                    <Delete02Icon />
+                    <span>删除</span>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         ),
       },
     ],
-    [hasPermission],
+    [hasPermission]
   )
 
   return (
@@ -233,7 +248,7 @@ export function UsersPage() {
         actions={
           hasPermission(PERMISSIONS.USER_CREATE) && (
             <Button onClick={handleCreate}>
-              <PlusSignIcon className="size-4" />
+              <PlusSignIcon data-icon="inline-start" />
               新增用户
             </Button>
           )
@@ -252,19 +267,24 @@ export function UsersPage() {
           className="sm:max-w-xs"
         />
         <Select
+          items={STATUS_ITEMS}
           value={statusFilter}
-          onValueChange={(val) => {
-            setStatusFilter(val)
+          onValueChange={(value) => {
+            setStatusFilter(value ?? "all")
             setPage(1)
           }}
         >
           <SelectTrigger className="sm:w-32">
-            <SelectValue placeholder="状态筛选" />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部</SelectItem>
-            <SelectItem value="active">启用</SelectItem>
-            <SelectItem value="inactive">禁用</SelectItem>
+            <SelectGroup>
+              {STATUS_ITEMS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>
