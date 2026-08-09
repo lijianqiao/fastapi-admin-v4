@@ -1,0 +1,76 @@
+import { Routes, Route } from "react-router"
+
+import { AppLayout } from "@/components/layout/AppLayout"
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
+import { ErrorBoundary } from "@/components/common/ErrorBoundary"
+import { PERMISSIONS, ROUTES } from "@/lib/constants"
+import { AuditLogsPage } from "@/pages/AuditLogsPage"
+import { DashboardPage } from "@/pages/DashboardPage"
+import { ForbiddenPage } from "@/pages/ForbiddenPage"
+import { LoginPage } from "@/pages/LoginPage"
+import { NotFoundPage } from "@/pages/NotFoundPage"
+import { PermissionsPage } from "@/pages/PermissionsPage"
+import { ProfilePage } from "@/pages/ProfilePage"
+import { RolesPage } from "@/pages/RolesPage"
+import { UsersPage } from "@/pages/UsersPage"
+
+export function App() {
+  return (
+    <ErrorBoundary>
+      <Routes>
+        {/* 登录页 */}
+        <Route path={ROUTES.LOGIN} element={<LoginPage />} />
+
+        {/* 受保护路由 */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <AppLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route path={ROUTES.DASHBOARD} element={<DashboardPage />} />
+          <Route
+            path={ROUTES.USERS}
+            element={
+              <ProtectedRoute permission={PERMISSIONS.USER_READ}>
+                <UsersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTES.ROLES}
+            element={
+              <ProtectedRoute permission={PERMISSIONS.ROLE_READ}>
+                <RolesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTES.PERMISSIONS}
+            element={
+              <ProtectedRoute permission={PERMISSIONS.PERMISSION_READ}>
+                <PermissionsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path={ROUTES.PROFILE} element={<ProfilePage />} />
+          <Route
+            path={ROUTES.AUDIT}
+            element={
+              <ProtectedRoute permission={PERMISSIONS.AUDIT_READ}>
+                <AuditLogsPage />
+              </ProtectedRoute>
+            }
+          />
+        </Route>
+
+        {/* 错误页面 */}
+        <Route path={ROUTES.FORBIDDEN} element={<ForbiddenPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </ErrorBoundary>
+  )
+}
+
+export default App
