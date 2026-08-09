@@ -22,11 +22,12 @@ def _to_async_database_url(url: str) -> str:
 
 database_url = _to_async_database_url(settings.DATABASE_URL)
 
+# SQL 语句输出由日志级别控制（见 app.main.configure_logging），避免 echo 再挂一层 handler 导致重复打印
 if database_url.startswith("sqlite+"):
     engine = create_async_engine(
         database_url,
         pool_pre_ping=True,
-        echo=settings.DEBUG,
+        echo=False,
         hide_parameters=True,
     )
 else:
@@ -35,7 +36,7 @@ else:
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_pre_ping=True,
-        echo=settings.DEBUG,
+        echo=False,
         hide_parameters=True,
     )
 

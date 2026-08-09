@@ -23,10 +23,24 @@ from app.crud.base import RelatedObjectsNotFoundError
 from app.crud.role import RoleInUseError
 from app.crud.user import LastActiveSuperuserError
 
-logging.basicConfig(
-    level=logging.getLevelName(settings.LOG_LEVEL.upper()),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+def configure_logging() -> None:
+    """
+    配置应用日志。
+
+    根日志遵循 ``LOG_LEVEL``；SQLAlchemy 引擎/连接池默认仅输出 WARNING 及以上，
+    需要 SQL 排障时设置 ``SQL_ECHO=true``。
+    """
+    logging.basicConfig(
+        level=logging.getLevelName(settings.LOG_LEVEL.upper()),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    sql_level = logging.INFO if settings.SQL_ECHO else logging.WARNING
+    logging.getLogger("sqlalchemy.engine").setLevel(sql_level)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
+
+
+configure_logging()
 logger = logging.getLogger(__name__)
 
 

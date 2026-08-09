@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = Field(default=8000, ge=1, le=65535)
     LOG_LEVEL: Literal["critical", "error", "warning", "info", "debug"] = "info"
+    # 仅在排查 SQL 时开启；默认关闭，避免控制台被引擎日志淹没
+    SQL_ECHO: bool = False
     API_V1_PREFIX: str = "/api/v1"
     REGISTRATION_ENABLED: bool = False
 
