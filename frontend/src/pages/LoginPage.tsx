@@ -10,7 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { toast } from "sonner"
 
-import { Shield02Icon } from "@/lib/icons"
+import { Shield02Icon, ViewIcon, ViewOffSlashIcon } from "@/lib/icons"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -28,6 +28,12 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import { Spinner } from "@/components/ui/spinner"
 import { useAuth } from "@/hooks/use-auth"
 import { ROUTES } from "@/lib/constants"
@@ -43,6 +49,7 @@ export function LoginPage() {
   const navigate = useNavigate()
   const { login, isLoading } = useAuth()
   const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
 
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -121,14 +128,31 @@ export function LoginPage() {
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
                       <FieldLabel htmlFor="login-password">密码</FieldLabel>
-                      <Input
-                        id="login-password"
-                        type="password"
-                        autoComplete="current-password"
-                        placeholder="请输入密码"
-                        aria-invalid={fieldState.invalid}
-                        {...field}
-                      />
+                      <InputGroup>
+                        <InputGroupInput
+                          id="login-password"
+                          type={showPassword ? "text" : "password"}
+                          autoComplete="current-password"
+                          placeholder="请输入密码"
+                          aria-invalid={fieldState.invalid}
+                          {...field}
+                        />
+                        <InputGroupAddon align="inline-end">
+                          <InputGroupButton
+                            type="button"
+                            size="icon-xs"
+                            aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                            aria-pressed={showPassword}
+                            onClick={() => setShowPassword((prev) => !prev)}
+                          >
+                            {showPassword ? (
+                              <ViewOffSlashIcon />
+                            ) : (
+                              <ViewIcon />
+                            )}
+                          </InputGroupButton>
+                        </InputGroupAddon>
+                      </InputGroup>
                       <FieldError errors={[fieldState.error]} />
                     </Field>
                   )}
