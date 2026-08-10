@@ -18,6 +18,7 @@ import {
   Settings02Icon,
   AuditIcon,
   ArrowDown01Icon,
+  InboxIcon,
 } from "@/lib/icons"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -120,6 +121,35 @@ const NAV_ENTRIES: NavEntry[] = [
   },
   {
     type: "group",
+    id: "trash",
+    label: "回收站",
+    icon: InboxIcon,
+    children: [
+      {
+        type: "item",
+        label: "用户回收站",
+        path: ROUTES.USERS_TRASH,
+        icon: UserMultipleIcon,
+        permission: PERMISSIONS.USER_DELETE,
+      },
+      {
+        type: "item",
+        label: "角色回收站",
+        path: ROUTES.ROLES_TRASH,
+        icon: Shield02Icon,
+        permission: PERMISSIONS.ROLE_DELETE,
+      },
+      {
+        type: "item",
+        label: "权限回收站",
+        path: ROUTES.PERMISSIONS_TRASH,
+        icon: Key02Icon,
+        permission: PERMISSIONS.PERMISSION_DELETE,
+      },
+    ],
+  },
+  {
+    type: "group",
     id: "logs",
     label: "日志中心",
     icon: AuditIcon,
@@ -166,7 +196,7 @@ function LeafLink({
     return (
       <NavLink
         to={item.path}
-        end={item.path === ROUTES.DASHBOARD}
+        end
         onClick={onNavigate}
         className={({ isActive }) =>
           navLinkClassName(isActive, collapsed, nested)
@@ -184,7 +214,7 @@ function LeafLink({
         render={
           <NavLink
             to={item.path}
-            end={item.path === ROUTES.DASHBOARD}
+            end
             onClick={onNavigate}
             className={({ isActive }) =>
               navLinkClassName(isActive, collapsed, nested)
@@ -215,9 +245,7 @@ function GroupNav({
   const location = useLocation()
   const GroupIcon = group.icon
   const childActive = group.children.some(
-    (child) =>
-      location.pathname === child.path ||
-      location.pathname.startsWith(`${child.path}/`)
+    (child) => location.pathname === child.path
   )
   const [open, setOpen] = useState(childActive)
 
@@ -407,7 +435,11 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
               <span>个人中心</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} variant="destructive">
+            <DropdownMenuItem
+              onClick={logout}
+              variant="destructive"
+              className="bg-destructive text-white focus:bg-destructive/90 focus:text-white data-[variant=destructive]:text-white data-[variant=destructive]:focus:bg-destructive/90 data-[variant=destructive]:focus:text-white data-[variant=destructive]:*:[svg]:text-white"
+            >
               <Logout02Icon />
               <span>退出登录</span>
             </DropdownMenuItem>

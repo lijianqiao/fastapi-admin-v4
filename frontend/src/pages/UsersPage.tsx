@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useMemo, useState } from "react"
+import { Link } from "react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
 import { toast } from "sonner"
@@ -15,6 +16,7 @@ import {
   Delete02Icon,
   UserAssign02Icon,
   ResetPasswordIcon,
+  InboxIcon,
 } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -46,7 +48,7 @@ import { ResetPasswordDialog } from "@/components/users/ResetPasswordDialog"
 import api from "@/lib/api"
 import { usePaginatedQuery } from "@/hooks/use-paginated-query"
 import { usePermission } from "@/hooks/use-permission"
-import { PERMISSIONS } from "@/lib/constants"
+import { PERMISSIONS, ROUTES } from "@/lib/constants"
 import type { UserCreate, UserUpdate, UserWithRoles } from "@/types/user"
 
 /** base-ui 的 Select 需要 items 才能在受控赋值时渲染选中项文案 */
@@ -327,12 +329,23 @@ export function UsersPage() {
         title="用户管理"
         description="管理系统中的用户"
         actions={
-          hasPermission(PERMISSIONS.USER_CREATE) && (
-            <Button onClick={handleCreate}>
-              <PlusSignIcon data-icon="inline-start" />
-              新增用户
-            </Button>
-          )
+          <>
+            {hasPermission(PERMISSIONS.USER_DELETE) && (
+              <Button
+                variant="outline"
+                render={<Link to={ROUTES.USERS_TRASH} />}
+              >
+                <InboxIcon data-icon="inline-start" />
+                回收站
+              </Button>
+            )}
+            {hasPermission(PERMISSIONS.USER_CREATE) && (
+              <Button onClick={handleCreate}>
+                <PlusSignIcon data-icon="inline-start" />
+                新增用户
+              </Button>
+            )}
+          </>
         }
       />
 

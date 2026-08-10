@@ -13,9 +13,12 @@ import { ForbiddenPage } from "@/pages/ForbiddenPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { NotFoundPage } from "@/pages/NotFoundPage"
 import { PermissionsPage } from "@/pages/PermissionsPage"
+import { PermissionsTrashPage } from "@/pages/PermissionsTrashPage"
 import { ProfilePage } from "@/pages/ProfilePage"
 import { RolesPage } from "@/pages/RolesPage"
+import { RolesTrashPage } from "@/pages/RolesTrashPage"
 import { UsersPage } from "@/pages/UsersPage"
+import { UsersTrashPage } from "@/pages/UsersTrashPage"
 
 export function App() {
   const { bootstrap, isInitialized } = useAuth()
@@ -57,6 +60,14 @@ export function App() {
             }
           />
           <Route
+            path={ROUTES.USERS_TRASH}
+            element={
+              <ProtectedRoute permission={PERMISSIONS.USER_DELETE}>
+                <UsersTrashPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path={ROUTES.ROLES}
             element={
               <ProtectedRoute permission={PERMISSIONS.ROLE_READ}>
@@ -65,10 +76,26 @@ export function App() {
             }
           />
           <Route
+            path={ROUTES.ROLES_TRASH}
+            element={
+              <ProtectedRoute permission={PERMISSIONS.ROLE_DELETE}>
+                <RolesTrashPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path={ROUTES.PERMISSIONS}
             element={
               <ProtectedRoute permission={PERMISSIONS.PERMISSION_READ}>
                 <PermissionsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTES.PERMISSIONS_TRASH}
+            element={
+              <ProtectedRoute permission={PERMISSIONS.PERMISSION_DELETE}>
+                <PermissionsTrashPage />
               </ProtectedRoute>
             }
           />

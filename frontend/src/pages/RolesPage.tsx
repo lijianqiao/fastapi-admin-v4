@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useMemo, useState } from "react"
+import { Link } from "react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
 import { toast } from "sonner"
@@ -14,6 +15,7 @@ import {
   PencilEdit02Icon,
   Delete02Icon,
   Key02Icon,
+  InboxIcon,
 } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,7 +37,7 @@ import { AssignPermissionsDialog } from "@/components/roles/AssignPermissionsDia
 import api from "@/lib/api"
 import { usePaginatedQuery } from "@/hooks/use-paginated-query"
 import { usePermission } from "@/hooks/use-permission"
-import { PERMISSIONS } from "@/lib/constants"
+import { PERMISSIONS, ROUTES } from "@/lib/constants"
 import type { RoleCreate, RoleUpdate, RoleWithPermissions } from "@/types/role"
 
 export function RolesPage() {
@@ -257,17 +259,28 @@ export function RolesPage() {
         title="角色管理"
         description="管理系统角色和权限分配"
         actions={
-          hasPermission(PERMISSIONS.ROLE_CREATE) && (
-            <Button
-              onClick={() => {
-                setEditingRole(null)
-                setFormOpen(true)
-              }}
-            >
-              <PlusSignIcon data-icon="inline-start" />
-              新增角色
-            </Button>
-          )
+          <>
+            {hasPermission(PERMISSIONS.ROLE_DELETE) && (
+              <Button
+                variant="outline"
+                render={<Link to={ROUTES.ROLES_TRASH} />}
+              >
+                <InboxIcon data-icon="inline-start" />
+                回收站
+              </Button>
+            )}
+            {hasPermission(PERMISSIONS.ROLE_CREATE) && (
+              <Button
+                onClick={() => {
+                  setEditingRole(null)
+                  setFormOpen(true)
+                }}
+              >
+                <PlusSignIcon data-icon="inline-start" />
+                新增角色
+              </Button>
+            )}
+          </>
         }
       />
 

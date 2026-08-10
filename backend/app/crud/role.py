@@ -174,6 +174,60 @@ class CRUDRole(CRUDBase[Role]):
         await db.flush()
         return True
 
+    async def get_deleted_multi(
+        self,
+        db: AsyncSession,
+        search: str | None = None,
+        skip: int = 0,
+        limit: int = 10,
+    ) -> tuple[list[Role], int]:
+        """Return a page of soft-deleted roles for the recycle bin."""
+        stmt = select(Role).where(Role.is_deleted.is_(True))
+        if search:
+            stmt = stmt.where(Role.name.ilike(contains_pattern(search), escape="\\"))
+
+        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
+        total = (await db.execute(count_stmt)).scalar_one()
+        page_stmt = stmt.order_by(Role.updated_at.desc(), Role.id.desc()).offset(skip).limit(limit)
+        roles = list((await db.execute(page_stmt)).scalars().all())
+        return roles, total
+
+    async def restore(self, db: AsyncSession, role_id: int) -> Role | None:
+        """Restore a soft-deleted role."""
+        stmt = (
+            select(Role)
+            .where(Role.id == role_id, Role.is_deleted.is_(True))
+            .options(
+                selectinload(Role.permissions.and_(Permission.is_deleted.is_(False))),
+                with_expression(Role._user_count, self._active_user_count_expression()),
+            )
+            .order_by(Role.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        role = (await db.execute(stmt)).scalar_one_or_none()
+        if role is None:
+            return None
+        role.is_deleted = False
+        await db.flush()
+        return role
+
+    async def hard_delete(self, db: AsyncSession, role_id: int) -> bool:
+        """Permanently remove a soft-deleted role."""
+        stmt = (
+            select(Role)
+            .where(Role.id == role_id, Role.is_deleted.is_(True))
+            .order_by(Role.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        role = (await db.execute(stmt)).scalar_one_or_none()
+        if role is None:
+            return False
+        await db.delete(role)
+        await db.flush()
+        return True
+
     async def get_multi_filtered(
         self,
         db: AsyncSession,

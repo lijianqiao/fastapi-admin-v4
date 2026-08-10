@@ -4,6 +4,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react"
+import { Link } from "react-router"
 import dayjs from "dayjs"
 import { toast } from "sonner"
 
@@ -13,6 +14,7 @@ import {
   Delete02Icon,
   Key02Icon,
   MoreHorizontalIcon,
+  InboxIcon,
 } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -56,7 +58,7 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog"
 import { PermissionFormDialog } from "@/components/permissions/PermissionFormDialog"
 import api from "@/lib/api"
 import { usePermission } from "@/hooks/use-permission"
-import { PERMISSIONS } from "@/lib/constants"
+import { PERMISSIONS, ROUTES } from "@/lib/constants"
 import type {
   GroupedPermissions,
   Permission,
@@ -176,12 +178,23 @@ export function PermissionsPage() {
         title="权限管理"
         description="管理系统权限定义"
         actions={
-          hasPermission(PERMISSIONS.PERMISSION_CREATE) && (
-            <Button onClick={handleCreate}>
-              <PlusSignIcon data-icon="inline-start" />
-              新增权限
-            </Button>
-          )
+          <>
+            {hasPermission(PERMISSIONS.PERMISSION_DELETE) && (
+              <Button
+                variant="outline"
+                render={<Link to={ROUTES.PERMISSIONS_TRASH} />}
+              >
+                <InboxIcon data-icon="inline-start" />
+                回收站
+              </Button>
+            )}
+            {hasPermission(PERMISSIONS.PERMISSION_CREATE) && (
+              <Button onClick={handleCreate}>
+                <PlusSignIcon data-icon="inline-start" />
+                新增权限
+              </Button>
+            )}
+          </>
         }
       />
 

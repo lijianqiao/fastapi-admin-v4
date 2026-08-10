@@ -11,6 +11,7 @@ from app.schemas.common import PaginatedData, ResponseEnvelope, paginated_respon
 from app.schemas.role import (
     AssignPermissionsRequest,
     RoleCreate,
+    RoleResponse,
     RoleUpdate,
     RoleWithPermissions,
 )
@@ -71,6 +72,79 @@ async def create_role(
         message="创建成功",
         code=status.HTTP_201_CREATED,
     )
+
+
+@router.get(
+    "/deleted",
+    response_model=ResponseEnvelope[PaginatedData[RoleResponse]],
+)
+async def list_deleted_roles(
+    page: int = Query(default=1, ge=1, le=100_000),
+    page_size: int = Query(default=10, ge=1, le=100),
+    search: str | None = Query(default=None, min_length=1, max_length=100),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("role:delete")),
+) -> ResponseEnvelope[PaginatedData[RoleResponse]]:
+    """List soft-deleted roles in the recycle bin."""
+    roles, total = await role_crud.get_deleted_multi(
+        db,
+        search=search,
+        skip=(page - 1) * page_size,
+        limit=page_size,
+    )
+    items = [RoleResponse.model_validate(role) for role in roles]
+    return paginated_response(items, total, page, page_size)
+
+
+@router.post(
+    "/{role_id}/restore",
+    response_model=ResponseEnvelope[RoleWithPermissions],
+)
+async def restore_role(
+    request: Request,
+    role_id: int = Path(gt=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("role:delete")),
+) -> ResponseEnvelope[RoleWithPermissions]:
+    """Restore a soft-deleted role from the recycle bin."""
+    restored = await role_crud.restore(db, role_id)
+    if restored is None:
+        raise HTTPException(status_code=404, detail="回收站中不存在该角色")
+    await log_audit(
+        db,
+        user_id=current_user.id,
+        action="restore_role",
+        target=f"role:{role_id}",
+        detail=f"恢复角色: {restored.name}",
+        ip=get_client_ip(request),
+    )
+    await db.commit()
+    return success_response(RoleWithPermissions.model_validate(restored), message="恢复成功")
+
+
+@router.delete(
+    "/{role_id}/purge",
+    response_model=ResponseEnvelope[None],
+)
+async def purge_role(
+    request: Request,
+    role_id: int = Path(gt=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("role:delete")),
+) -> ResponseEnvelope[None]:
+    """Permanently delete a soft-deleted role."""
+    if not await role_crud.hard_delete(db, role_id):
+        raise HTTPException(status_code=404, detail="回收站中不存在该角色")
+    await log_audit(
+        db,
+        user_id=current_user.id,
+        action="purge_role",
+        target=f"role:{role_id}",
+        detail="永久删除角色",
+        ip=get_client_ip(request),
+    )
+    await db.commit()
+    return success_response(None, message="已永久删除")
 
 
 @router.patch(

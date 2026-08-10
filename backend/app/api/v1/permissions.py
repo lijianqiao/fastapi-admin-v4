@@ -7,13 +7,86 @@ from app.core.database import get_db
 from app.core.deps import get_client_ip, require_permission
 from app.crud.permission import permission_crud
 from app.models.user import User
-from app.schemas.common import PaginatedData, ResponseEnvelope, success_response
+from app.schemas.common import PaginatedData, ResponseEnvelope, paginated_response, success_response
 from app.schemas.permission import PermissionCreate, PermissionResponse, PermissionUpdate
 from app.utils.audit import log_audit
 
 router = APIRouter()
 
 type PermissionListData = PaginatedData[PermissionResponse] | dict[str, list[PermissionResponse]]
+
+
+@router.get(
+    "/deleted",
+    response_model=ResponseEnvelope[PaginatedData[PermissionResponse]],
+)
+async def list_deleted_permissions(
+    page: int = Query(default=1, ge=1, le=100_000),
+    page_size: int = Query(default=10, ge=1, le=100),
+    search: str | None = Query(default=None, min_length=1, max_length=100),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("permission:delete")),
+) -> ResponseEnvelope[PaginatedData[PermissionResponse]]:
+    """List soft-deleted permissions in the recycle bin."""
+    permissions, total = await permission_crud.get_deleted_multi(
+        db,
+        search=search,
+        skip=(page - 1) * page_size,
+        limit=page_size,
+    )
+    items = [PermissionResponse.model_validate(permission) for permission in permissions]
+    return paginated_response(items, total, page, page_size)
+
+
+@router.post(
+    "/{permission_id}/restore",
+    response_model=ResponseEnvelope[PermissionResponse],
+)
+async def restore_permission(
+    request: Request,
+    permission_id: int = Path(gt=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("permission:delete")),
+) -> ResponseEnvelope[PermissionResponse]:
+    """Restore a soft-deleted permission from the recycle bin."""
+    restored = await permission_crud.restore(db, permission_id)
+    if restored is None:
+        raise HTTPException(status_code=404, detail="回收站中不存在该权限")
+    await log_audit(
+        db,
+        user_id=current_user.id,
+        action="restore_permission",
+        target=f"permission:{permission_id}",
+        detail=f"恢复权限: {restored.code}",
+        ip=get_client_ip(request),
+    )
+    await db.commit()
+    return success_response(PermissionResponse.model_validate(restored), message="恢复成功")
+
+
+@router.delete(
+    "/{permission_id}/purge",
+    response_model=ResponseEnvelope[None],
+)
+async def purge_permission(
+    request: Request,
+    permission_id: int = Path(gt=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("permission:delete")),
+) -> ResponseEnvelope[None]:
+    """Permanently delete a soft-deleted permission."""
+    if not await permission_crud.hard_delete(db, permission_id):
+        raise HTTPException(status_code=404, detail="回收站中不存在该权限")
+    await log_audit(
+        db,
+        user_id=current_user.id,
+        action="purge_permission",
+        target=f"permission:{permission_id}",
+        detail="永久删除权限",
+        ip=get_client_ip(request),
+    )
+    await db.commit()
+    return success_response(None, message="已永久删除")
 
 
 @router.get(

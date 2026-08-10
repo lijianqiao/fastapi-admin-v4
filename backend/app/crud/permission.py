@@ -92,5 +92,65 @@ class CRUDPermission(CRUDBase[Permission]):
         permissions_result = await db.execute(page_stmt)
         return list(permissions_result.scalars().all()), total
 
+    async def get_deleted_multi(
+        self,
+        db: AsyncSession,
+        search: str | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[Permission], int]:
+        """Return a page of soft-deleted permissions for the recycle bin."""
+        stmt = select(Permission).where(Permission.is_deleted.is_(True))
+        if search:
+            search_pattern = contains_pattern(search)
+            stmt = stmt.where(
+                or_(
+                    Permission.name.ilike(search_pattern, escape="\\"),
+                    Permission.code.ilike(search_pattern, escape="\\"),
+                )
+            )
+
+        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
+        total = (await db.execute(count_stmt)).scalar_one()
+        page_stmt = (
+            stmt.order_by(Permission.updated_at.desc(), Permission.id.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        permissions = list((await db.execute(page_stmt)).scalars().all())
+        return permissions, total
+
+    async def restore(self, db: AsyncSession, permission_id: int) -> Permission | None:
+        """Restore a soft-deleted permission."""
+        stmt = (
+            select(Permission)
+            .where(Permission.id == permission_id, Permission.is_deleted.is_(True))
+            .order_by(Permission.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        permission = (await db.execute(stmt)).scalar_one_or_none()
+        if permission is None:
+            return None
+        permission.is_deleted = False
+        await db.flush()
+        return permission
+
+    async def hard_delete(self, db: AsyncSession, permission_id: int) -> bool:
+        """Permanently remove a soft-deleted permission."""
+        stmt = (
+            select(Permission)
+            .where(Permission.id == permission_id, Permission.is_deleted.is_(True))
+            .order_by(Permission.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        permission = (await db.execute(stmt)).scalar_one_or_none()
+        if permission is None:
+            return False
+        await db.delete(permission)
+        await db.flush()
+        return True
+
 
 permission_crud = CRUDPermission()

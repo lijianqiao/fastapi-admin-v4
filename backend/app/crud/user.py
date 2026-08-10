@@ -362,6 +362,67 @@ class CRUDUser(CRUDBase[User]):
         await db.flush()
         return True
 
+    async def get_deleted_multi(
+        self,
+        db: AsyncSession,
+        search: str | None = None,
+        skip: int = 0,
+        limit: int = 10,
+    ) -> tuple[list[User], int]:
+        """Return a page of soft-deleted users for the recycle bin."""
+        stmt = (
+            select(User)
+            .where(User.is_deleted.is_(True))
+            .options(selectinload(User.roles.and_(Role.is_deleted.is_(False))))
+        )
+        if search:
+            search_pattern = contains_pattern(search)
+            stmt = stmt.where(
+                or_(
+                    User.username.ilike(search_pattern, escape="\\"),
+                    User.email.ilike(search_pattern, escape="\\"),
+                )
+            )
+
+        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
+        total = (await db.execute(count_stmt)).scalar_one()
+        page_stmt = stmt.order_by(User.updated_at.desc(), User.id.desc()).offset(skip).limit(limit)
+        users = list((await db.execute(page_stmt)).scalars().unique().all())
+        return users, total
+
+    async def restore(self, db: AsyncSession, user_id: int) -> User | None:
+        """Restore a soft-deleted user and return it with active roles loaded."""
+        stmt = (
+            select(User)
+            .where(User.id == user_id, User.is_deleted.is_(True))
+            .options(selectinload(User.roles.and_(Role.is_deleted.is_(False))))
+            .order_by(User.id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+        user = (await db.execute(stmt)).scalar_one_or_none()
+        if user is None:
+            return None
+        user.is_deleted = False
+        await db.flush()
+        return user
+
+    async def hard_delete(self, db: AsyncSession, user_id: int) -> bool:
+        """Permanently remove a soft-deleted user and cascaded associations."""
+        stmt = (
+            select(User)
+            .where(User.id == user_id, User.is_deleted.is_(True))
+            .order_by(User.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        user = (await db.execute(stmt)).scalar_one_or_none()
+        if user is None:
+            return False
+        await db.delete(user)
+        await db.flush()
+        return True
+
     async def _lock_for_password_update(self, db: AsyncSession, user_id: int) -> User | None:
         """Lock an active user row ahead of a password write."""
         stmt = (

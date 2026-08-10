@@ -58,7 +58,7 @@ SEED_PERMISSIONS: tuple[SeedPermission, ...] = (
         "name": "删除用户",
         "code": "user:delete",
         "module": "用户管理",
-        "description": "软删除用户",
+        "description": "软删除用户，并管理用户回收站（恢复/永久删除）",
     },
     {
         "name": "分配角色",
@@ -94,7 +94,7 @@ SEED_PERMISSIONS: tuple[SeedPermission, ...] = (
         "name": "删除角色",
         "code": "role:delete",
         "module": "角色管理",
-        "description": "软删除角色",
+        "description": "软删除角色，并管理角色回收站（恢复/永久删除）",
     },
     {
         "name": "分配权限",
@@ -124,7 +124,7 @@ SEED_PERMISSIONS: tuple[SeedPermission, ...] = (
         "name": "删除权限",
         "code": "permission:delete",
         "module": "权限管理",
-        "description": "软删除权限",
+        "description": "软删除权限，并管理权限回收站（恢复/永久删除）",
     },
     {
         "name": "查看日志",

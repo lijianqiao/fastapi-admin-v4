@@ -82,6 +82,79 @@ async def create_user(
 
 
 @router.get(
+    "/deleted",
+    response_model=ResponseEnvelope[PaginatedData[UserWithRoles]],
+)
+async def list_deleted_users(
+    page: int = Query(default=1, ge=1, le=100_000),
+    page_size: int = Query(default=10, ge=1, le=100),
+    search: str | None = Query(default=None, min_length=1, max_length=100),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_permission("user:delete")),
+) -> ResponseEnvelope[PaginatedData[UserWithRoles]]:
+    """List soft-deleted users in the recycle bin."""
+    users, total = await user_crud.get_deleted_multi(
+        db,
+        search=search,
+        skip=(page - 1) * page_size,
+        limit=page_size,
+    )
+    items = [UserWithRoles.model_validate(user) for user in users]
+    return paginated_response(items, total, page, page_size)
+
+
+@router.post(
+    "/{user_id}/restore",
+    response_model=ResponseEnvelope[UserWithRoles],
+)
+async def restore_user(
+    request: Request,
+    user_id: int = Path(gt=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("user:delete")),
+) -> ResponseEnvelope[UserWithRoles]:
+    """Restore a soft-deleted user from the recycle bin."""
+    restored = await user_crud.restore(db, user_id)
+    if restored is None:
+        raise HTTPException(status_code=404, detail="回收站中不存在该用户")
+    await log_audit(
+        db,
+        user_id=current_user.id,
+        action="restore_user",
+        target=f"user:{user_id}",
+        detail=f"恢复用户: {restored.username}",
+        ip=get_client_ip(request),
+    )
+    await db.commit()
+    return success_response(UserWithRoles.model_validate(restored), message="恢复成功")
+
+
+@router.delete(
+    "/{user_id}/purge",
+    response_model=ResponseEnvelope[None],
+)
+async def purge_user(
+    request: Request,
+    user_id: int = Path(gt=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("user:delete")),
+) -> ResponseEnvelope[None]:
+    """Permanently delete a soft-deleted user."""
+    if not await user_crud.hard_delete(db, user_id):
+        raise HTTPException(status_code=404, detail="回收站中不存在该用户")
+    await log_audit(
+        db,
+        user_id=current_user.id,
+        action="purge_user",
+        target=f"user:{user_id}",
+        detail="永久删除用户",
+        ip=get_client_ip(request),
+    )
+    await db.commit()
+    return success_response(None, message="已永久删除")
+
+
+@router.get(
     "/{user_id}",
     response_model=ResponseEnvelope[UserWithRoles],
 )
