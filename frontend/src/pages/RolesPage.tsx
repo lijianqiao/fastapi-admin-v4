@@ -3,8 +3,8 @@
  * DataTable + 新增/编辑/删除/权限分配。
  */
 
-import { useCallback, useMemo, useState } from "react"
-import { Link } from "react-router"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Link, useSearchParams } from "react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
 import { toast } from "sonner"
@@ -42,6 +42,7 @@ import type { RoleCreate, RoleUpdate, RoleWithPermissions } from "@/types/role"
 
 export function RolesPage() {
   const { hasPermission } = usePermission()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState("")
 
   const {
@@ -67,6 +68,16 @@ export function RolesPage() {
   const [assignRole, setAssignRole] = useState<RoleWithPermissions | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteRole, setDeleteRole] = useState<RoleWithPermissions | null>(null)
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1" && hasPermission(PERMISSIONS.ROLE_CREATE)) {
+      setEditingRole(null)
+      setFormOpen(true)
+      const next = new URLSearchParams(searchParams)
+      next.delete("create")
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams, hasPermission])
 
   const handleSubmit = async (
     data: RoleCreate | RoleUpdate
@@ -175,18 +186,11 @@ export function RolesPage() {
             )
           }
           return (
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={role.is_active}
-                onCheckedChange={(checked) =>
-                  handleToggleActive(role, checked)
-                }
-                aria-label={role.is_active ? "禁用角色" : "启用角色"}
-              />
-              <span className="text-sm text-muted-foreground">
-                {role.is_active ? "启用" : "禁用"}
-              </span>
-            </div>
+            <Switch
+              checked={role.is_active}
+              onCheckedChange={(checked) => handleToggleActive(role, checked)}
+              aria-label={role.is_active ? "禁用角色" : "启用角色"}
+            />
           )
         },
       },

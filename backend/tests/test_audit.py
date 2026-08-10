@@ -36,6 +36,22 @@ async def test_list_audit_logs_with_filter(
     assert all(item["action"] == "login" for item in items)
 
 
+async def test_list_audit_logs_filter_by_username(
+    client: AsyncClient,
+    auth_headers: Headers,
+) -> None:
+    response = await client.get(
+        "/api/v1/audit-logs",
+        params={"username": "testuser"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    items = response.json()["data"]["items"]
+    assert items
+    assert all(item["username"] == "testuser" for item in items)
+
+
 async def test_audit_log_pagination(
     client: AsyncClient,
     auth_headers: Headers,

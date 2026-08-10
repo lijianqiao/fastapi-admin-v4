@@ -16,9 +16,7 @@ import {
   UserCircleIcon,
   Logout02Icon,
   Settings02Icon,
-  AuditIcon,
   ArrowDown01Icon,
-  InboxIcon,
 } from "@/lib/icons"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -111,57 +109,14 @@ const NAV_ENTRIES: NavEntry[] = [
         icon: Key02Icon,
         permission: PERMISSIONS.PERMISSION_READ,
       },
-      {
-        type: "item",
-        label: "个人中心",
-        path: ROUTES.PROFILE,
-        icon: UserCircleIcon,
-      },
     ],
   },
   {
-    type: "group",
-    id: "trash",
-    label: "回收站",
-    icon: InboxIcon,
-    children: [
-      {
-        type: "item",
-        label: "用户回收站",
-        path: ROUTES.USERS_TRASH,
-        icon: UserMultipleIcon,
-        permission: PERMISSIONS.USER_DELETE,
-      },
-      {
-        type: "item",
-        label: "角色回收站",
-        path: ROUTES.ROLES_TRASH,
-        icon: Shield02Icon,
-        permission: PERMISSIONS.ROLE_DELETE,
-      },
-      {
-        type: "item",
-        label: "权限回收站",
-        path: ROUTES.PERMISSIONS_TRASH,
-        icon: Key02Icon,
-        permission: PERMISSIONS.PERMISSION_DELETE,
-      },
-    ],
-  },
-  {
-    type: "group",
-    id: "logs",
-    label: "日志中心",
-    icon: AuditIcon,
-    children: [
-      {
-        type: "item",
-        label: "操作日志",
-        path: ROUTES.AUDIT,
-        icon: FileEditIcon,
-        permission: PERMISSIONS.AUDIT_READ,
-      },
-    ],
+    type: "item",
+    label: "操作日志",
+    path: ROUTES.AUDIT,
+    icon: FileEditIcon,
+    permission: PERMISSIONS.AUDIT_READ,
   },
 ]
 

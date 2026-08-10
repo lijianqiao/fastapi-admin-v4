@@ -38,8 +38,15 @@ const ACTION_LABELS: Record<string, string> = {
   create_permission: "创建权限",
   update_permission: "更新权限",
   delete_permission: "删除权限",
+  restore_user: "恢复用户",
+  purge_user: "永久删除用户",
+  restore_role: "恢复角色",
+  purge_role: "永久删除角色",
+  restore_permission: "恢复权限",
+  purge_permission: "永久删除权限",
   update_profile: "更新资料",
   change_password: "修改密码",
+  reset_password: "重置密码",
 }
 
 /** base-ui 的 Select 需要 items 才能在受控赋值时渲染选中项文案 */
@@ -50,7 +57,7 @@ const ACTION_ITEMS = [
 
 export function AuditLogsPage() {
   const [actionFilter, setActionFilter] = useState<string>("all")
-  const [searchUserId, setSearchUserId] = useState("")
+  const [searchUsername, setSearchUsername] = useState("")
 
   const {
     items: logs,
@@ -64,7 +71,7 @@ export function AuditLogsPage() {
     url: "/audit-logs",
     params: {
       ...(actionFilter !== "all" ? { action: actionFilter } : {}),
-      ...(searchUserId ? { user_id: Number(searchUserId) } : {}),
+      ...(searchUsername ? { username: searchUsername } : {}),
     },
     initialPageSize: 20,
     errorMessage: "获取审计日志失败",
@@ -130,10 +137,10 @@ export function AuditLogsPage() {
       {/* 工具栏 */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <Input
-          placeholder="按用户 ID 筛选..."
-          value={searchUserId}
+          placeholder="按用户名筛选..."
+          value={searchUsername}
           onChange={(e) => {
-            setSearchUserId(e.target.value)
+            setSearchUsername(e.target.value)
             setPage(1)
           }}
           className="sm:max-w-xs"

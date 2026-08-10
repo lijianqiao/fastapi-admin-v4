@@ -118,9 +118,8 @@ export function UsersTrashPage() {
               恢复
             </Button>
             <Button
-              variant="ghost"
+              variant="destructive"
               size="sm"
-              className="text-destructive"
               onClick={() => {
                 setTarget(row.original)
                 setPurgeOpen(true)

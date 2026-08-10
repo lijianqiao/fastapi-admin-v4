@@ -3,8 +3,8 @@
  * DataTable + 搜索/筛选 + 新增/编辑/删除/角色分配。
  */
 
-import { useCallback, useMemo, useState } from "react"
-import { Link } from "react-router"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Link, useSearchParams } from "react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
 import { toast } from "sonner"
@@ -60,6 +60,7 @@ const STATUS_ITEMS = [
 
 export function UsersPage() {
   const { hasPermission } = usePermission()
+  const [searchParams, setSearchParams] = useSearchParams()
   const currentUserId = useAuthStore((state) => state.user?.id)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -97,6 +98,16 @@ export function UsersPage() {
     setEditingUser(null)
     setFormOpen(true)
   }
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1" && hasPermission(PERMISSIONS.USER_CREATE)) {
+      setEditingUser(null)
+      setFormOpen(true)
+      const next = new URLSearchParams(searchParams)
+      next.delete("create")
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams, hasPermission])
 
   const handleEdit = (user: UserWithRoles) => {
     setEditingUser(user)
@@ -243,23 +254,18 @@ export function UsersPage() {
           }
           const isSelf = user.id === currentUserId
           return (
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={user.is_active}
-                disabled={isSelf && user.is_active}
-                onCheckedChange={(checked) => handleToggleActive(user, checked)}
-                aria-label={
-                  isSelf && user.is_active
-                    ? "不能停用当前登录用户"
-                    : user.is_active
-                      ? "禁用用户"
-                      : "启用用户"
-                }
-              />
-              <span className="text-sm text-muted-foreground">
-                {user.is_active ? "启用" : "禁用"}
-              </span>
-            </div>
+            <Switch
+              checked={user.is_active}
+              disabled={isSelf && user.is_active}
+              onCheckedChange={(checked) => handleToggleActive(user, checked)}
+              aria-label={
+                isSelf && user.is_active
+                  ? "不能停用当前登录用户"
+                  : user.is_active
+                    ? "禁用用户"
+                    : "启用用户"
+              }
+            />
           )
         },
       },

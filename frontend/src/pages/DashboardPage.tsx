@@ -1,11 +1,12 @@
 /** 仪表盘页
 
- * 统计卡片 + 最近登录 + 快捷操作。
+ * 统计卡片 + 最近操作日志 + 快捷操作。
  */
 
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router"
 import dayjs from "dayjs"
+import { toast } from "sonner"
 
 import {
   UserMultipleIcon,
@@ -40,40 +41,45 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const [data, setData] = useState<DashboardData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
+      setIsLoading(true)
+      setLoadError(false)
       try {
         const response = await api.get("/dashboard")
         setData(response.data?.data)
       } catch {
-        // 忽略错误
+        setData(null)
+        setLoadError(true)
+        toast.error("获取仪表盘数据失败")
       } finally {
         setIsLoading(false)
       }
     }
-    fetchData()
+    void fetchData()
   }, [])
 
   const stats = [
     {
       label: "用户总数",
-      value: data?.stats.user_count ?? 0,
+      value: data?.stats.user_count,
       icon: UserMultipleIcon,
     },
     {
       label: "角色总数",
-      value: data?.stats.role_count ?? 0,
+      value: data?.stats.role_count,
       icon: Shield02Icon,
     },
     {
       label: "权限总数",
-      value: data?.stats.permission_count ?? 0,
+      value: data?.stats.permission_count,
       icon: Key02Icon,
     },
     {
       label: "启用用户",
-      value: data?.stats.active_user_count ?? 0,
+      value: data?.stats.active_user_count,
       icon: UserCheck02Icon,
     },
   ]
@@ -82,21 +88,28 @@ export function DashboardPage() {
     <div>
       <PageHeader title="仪表盘" description="系统运行概览" />
 
-      {/* 统计卡片 */}
+      {loadError && !isLoading && (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          仪表盘数据加载失败，请刷新页面重试。
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => {
           const Icon = stat.icon
           return (
             <Card key={stat.label}>
               <CardContent className="flex items-center gap-4">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground [&_svg]:size-6">
+                <div className="flex size-12 items-center justify-center rounded-lg bg-muted text-muted-foreground [&_svg]:size-6">
                   <Icon />
                 </div>
                 <div>
                   {isLoading ? (
                     <Skeleton className="h-8 w-16" />
+                  ) : loadError ? (
+                    <p className="text-2xl font-bold text-muted-foreground">—</p>
                   ) : (
-                    <p className="text-2xl font-bold">{stat.value}</p>
+                    <p className="text-2xl font-bold">{stat.value ?? 0}</p>
                   )}
                   <p className="text-sm text-muted-foreground">{stat.label}</p>
                 </div>
@@ -106,9 +119,7 @@ export function DashboardPage() {
         })}
       </div>
 
-      {/* 最近登录 + 快捷操作 */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* 最近登录 */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">最近操作日志</CardTitle>
@@ -121,6 +132,10 @@ export function DashboardPage() {
                   <Skeleton key={index} className="h-8 w-full" />
                 ))}
               </div>
+            ) : loadError ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                无法加载操作记录
+              </p>
             ) : (
               <Table>
                 <TableHeader>
@@ -165,27 +180,32 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* 快捷操作 */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">快捷操作</CardTitle>
             <CardDescription>常用管理功能入口</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            <Button onClick={() => navigate(ROUTES.USERS)} variant="outline">
+            <Button
+              onClick={() => navigate(`${ROUTES.USERS}?create=1`)}
+              variant="outline"
+            >
               <PlusSignIcon data-icon="inline-start" />
               新增用户
             </Button>
-            <Button onClick={() => navigate(ROUTES.ROLES)} variant="outline">
+            <Button
+              onClick={() => navigate(`${ROUTES.ROLES}?create=1`)}
+              variant="outline"
+            >
               <PlusSignIcon data-icon="inline-start" />
               新增角色
             </Button>
             <Button
-              onClick={() => navigate(ROUTES.PERMISSIONS)}
+              onClick={() => navigate(`${ROUTES.PERMISSIONS}?create=1`)}
               variant="outline"
             >
               <PlusSignIcon data-icon="inline-start" />
-              管理权限
+              新增权限
             </Button>
             <Button onClick={() => navigate(ROUTES.AUDIT)} variant="outline">
               查看日志

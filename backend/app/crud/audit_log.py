@@ -6,7 +6,7 @@ from typing import TypedDict
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.base import CRUDBase
+from app.crud.base import CRUDBase, contains_pattern
 from app.models.audit_log import AuditLog
 from app.models.user import User
 
@@ -40,6 +40,7 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
         self,
         db: AsyncSession,
         user_id: int | None = None,
+        username: str | None = None,
         action: str | None = None,
         skip: int = 0,
         limit: int = 20,
@@ -48,6 +49,10 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
         filters = []
         if user_id is not None:
             filters.append(AuditLog.user_id == user_id)
+        if username:
+            filters.append(
+                User.username.ilike(contains_pattern(username), escape="\\")
+            )
         if action:
             filters.append(AuditLog.action == action)
 
@@ -66,8 +71,16 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
             .where(*filters)
         )
 
-        # The username join only decorates the page; counting must not pay for it.
-        count_stmt = select(func.count()).select_from(AuditLog).where(*filters)
+        # Username filter needs the join for counting; otherwise count the base table.
+        if username:
+            count_stmt = (
+                select(func.count())
+                .select_from(AuditLog)
+                .outerjoin(User, AuditLog.user_id == User.id)
+                .where(*filters)
+            )
+        else:
+            count_stmt = select(func.count()).select_from(AuditLog).where(*filters)
         total_result = await db.execute(count_stmt)
         total = total_result.scalar_one()
 
