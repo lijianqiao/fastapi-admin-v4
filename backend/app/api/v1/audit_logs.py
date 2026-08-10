@@ -18,7 +18,7 @@ router = APIRouter()
     response_model=ResponseEnvelope[PaginatedData[AuditLogResponse]],
 )
 async def list_audit_logs(
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=100_000),
     page_size: int = Query(default=20, ge=1, le=100),
     user_id: int | None = Query(default=None, gt=0),
     action: str | None = Query(default=None, min_length=1, max_length=50),

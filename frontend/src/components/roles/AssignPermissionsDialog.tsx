@@ -27,6 +27,7 @@ import { Field, FieldGroup, FieldLabel, FieldSet } from "@/components/ui/field"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
 import api from "@/lib/api"
 import type { Permission } from "@/types/permission"
 import type { RoleWithPermissions } from "@/types/role"
@@ -35,7 +36,7 @@ interface AssignPermissionsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   role: RoleWithPermissions | null
-  onConfirm: (permissionIds: number[]) => Promise<void>
+  onConfirm: (permissionIds: number[]) => Promise<boolean>
 }
 
 export function AssignPermissionsDialog({
@@ -49,12 +50,13 @@ export function AssignPermissionsDialog({
   >({})
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     if (open) {
       setIsLoading(true)
       api
-        .get("/permissions", { params: { grouped: true, page_size: 200 } })
+        .get("/permissions", { params: { grouped: true } })
         .then((res) => {
           setGroupedPerms(res.data?.data ?? {})
         })
@@ -85,8 +87,13 @@ export function AssignPermissionsDialog({
   }
 
   const handleConfirm = async () => {
-    await onConfirm(selectedIds)
-    onOpenChange(false)
+    setIsSubmitting(true)
+    try {
+      const ok = await onConfirm(selectedIds)
+      if (ok) onOpenChange(false)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -175,10 +182,12 @@ export function AssignPermissionsDialog({
             type="button"
             variant="outline"
             onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
           >
             取消
           </Button>
-          <Button type="button" onClick={handleConfirm}>
+          <Button type="button" onClick={handleConfirm} disabled={isSubmitting}>
+            {isSubmitting && <Spinner data-icon="inline-start" />}
             确定分配
           </Button>
         </DialogFooter>

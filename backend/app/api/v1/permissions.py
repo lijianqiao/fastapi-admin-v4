@@ -21,7 +21,7 @@ type PermissionListData = PaginatedData[PermissionResponse] | dict[str, list[Per
     response_model=ResponseEnvelope[PermissionListData],
 )
 async def list_permissions(
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=100_000),
     page_size: int = Query(default=100, ge=1, le=200),
     search: str | None = Query(default=None, min_length=1, max_length=100),
     module: str | None = Query(default=None, min_length=1, max_length=50),

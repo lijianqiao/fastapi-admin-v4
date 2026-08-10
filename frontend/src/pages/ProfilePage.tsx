@@ -65,9 +65,7 @@ function getPasswordStrength(password: string): number {
 
 export function ProfilePage() {
   const { user, setUser } = useAuthStore()
-  const [profile, setProfile] = useState<CurrentUser | null>(
-    user as CurrentUser | null
-  )
+  const [profile, setProfile] = useState<CurrentUser | null>(user)
 
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),

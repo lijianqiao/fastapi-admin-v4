@@ -1,7 +1,7 @@
 /** 通用数据表格组件
 
  * 基于 @tanstack/react-table + shadcn Table。
- * 支持排序、自定义列渲染。
+ * 支持自定义列渲染、加载骨架屏、空状态展示。
  */
 
 import {

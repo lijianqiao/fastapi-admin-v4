@@ -241,6 +241,95 @@ async def test_assign_invalid_role_preserves_existing_roles(
     assert role_ids == [test_role.id]
 
 
+async def test_reset_password_by_admin_revokes_target_session_and_sets_new_password(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: Headers,
+    login_user: LoginUser,
+) -> None:
+    target = User(
+        username="toreset",
+        email="toreset@example.com",
+        hashed_password=hash_password("oldpassword123"),
+    )
+    db_session.add(target)
+    await db_session.commit()
+    target_headers = await login_user(target.username, "oldpassword123")
+
+    response = await client.put(
+        f"/api/v1/users/{target.id}/password",
+        json={"new_password": "brandnewpassword123"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+
+    # The old access token's session was revoked by the reset.
+    access_response = await client.get("/api/v1/me", headers=target_headers)
+    assert_error(access_response, 401)
+
+    # The new password now authenticates; the old one no longer does.
+    new_headers = await login_user(target.username, "brandnewpassword123")
+    assert "Authorization" in new_headers
+    old_password_response = await client.post(
+        "/api/v1/auth/login",
+        data={"username": target.username, "password": "oldpassword123"},
+    )
+    assert_error(old_password_response, 401)
+
+
+async def test_reset_password_requires_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    login_user: LoginUser,
+    test_user: User,
+) -> None:
+    no_permission_role = Role(name="无权限角色", permissions=[])
+    read_only_user = User(
+        username="reset_reader",
+        email="reset-reader@example.com",
+        hashed_password=hash_password("readerpassword123"),
+        roles=[no_permission_role],
+    )
+    db_session.add(read_only_user)
+    await db_session.commit()
+    headers = await login_user(read_only_user.username, "readerpassword123")
+
+    response = await client.put(
+        f"/api/v1/users/{test_user.id}/password",
+        json={"new_password": "shouldnotapply123"},
+        headers=headers,
+    )
+
+    assert_error(response, 403)
+
+
+async def test_cannot_reset_own_password_via_admin_endpoint(
+    client: AsyncClient,
+    auth_headers: Headers,
+    test_user: User,
+) -> None:
+    response = await client.put(
+        f"/api/v1/users/{test_user.id}/password",
+        json={"new_password": "selfresetpassword123"},
+        headers=auth_headers,
+    )
+
+    assert_error(response, 400)
+
+
+async def test_reset_password_nonexistent_user_returns_http_404(
+    client: AsyncClient,
+    auth_headers: Headers,
+) -> None:
+    response = await client.put(
+        "/api/v1/users/999999/password",
+        json={"new_password": "irrelevantpassword123"},
+        headers=auth_headers,
+    )
+
+    assert_error(response, 404)
+
+
 async def test_unauthorized_access_returns_http_401(client: AsyncClient) -> None:
     response = await client.get("/api/v1/users")
 

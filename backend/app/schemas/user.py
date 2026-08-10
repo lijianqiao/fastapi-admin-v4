@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import EmailStr, Field, field_validator, model_validator
+from pydantic import ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.schemas.common import ApiModel, PositiveId, unique_ids
 from app.schemas.role import RoleResponse
@@ -64,7 +64,7 @@ class UserResponse(ApiModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserWithRoles(UserResponse):
@@ -93,6 +93,12 @@ class AssignRolesRequest(ApiModel):
     @classmethod
     def deduplicate_ids(cls, values: list[int]) -> list[int]:
         return unique_ids(values)
+
+
+class AdminResetPasswordRequest(ApiModel):
+    """Administrator sets a new password for another user without the old one."""
+
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class ChangePasswordRequest(ApiModel):

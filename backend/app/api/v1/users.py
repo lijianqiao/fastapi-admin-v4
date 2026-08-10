@@ -8,7 +8,13 @@ from app.core.deps import get_client_ip, require_permission
 from app.crud.user import user_crud
 from app.models.user import User
 from app.schemas.common import PaginatedData, ResponseEnvelope, paginated_response, success_response
-from app.schemas.user import AssignRolesRequest, UserCreate, UserUpdate, UserWithRoles
+from app.schemas.user import (
+    AdminResetPasswordRequest,
+    AssignRolesRequest,
+    UserCreate,
+    UserUpdate,
+    UserWithRoles,
+)
 from app.services.auth import revoke_all_refresh_sessions
 from app.utils.audit import log_audit
 
@@ -20,7 +26,7 @@ router = APIRouter()
     response_model=ResponseEnvelope[PaginatedData[UserWithRoles]],
 )
 async def list_users(
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=100_000),
     page_size: int = Query(default=10, ge=1, le=100),
     search: str | None = Query(default=None, min_length=1, max_length=100),
     is_active: bool | None = Query(default=None),
@@ -179,6 +185,38 @@ async def delete_user(
     )
     await db.commit()
     return success_response(None, message="删除成功")
+
+
+@router.put(
+    "/{user_id}/password",
+    response_model=ResponseEnvelope[None],
+)
+async def reset_password(
+    password_in: AdminResetPasswordRequest,
+    request: Request,
+    user_id: int = Path(gt=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("user:reset_password")),
+) -> ResponseEnvelope[None]:
+    """Administrator sets a new password for another user, revoking their sessions."""
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="请通过个人中心修改自己的密码")
+
+    changed = await user_crud.reset_password(db, user_id, password_in.new_password)
+    if not changed:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    await revoke_all_refresh_sessions(db, user_id, reason="password_reset_by_admin")
+    await log_audit(
+        db,
+        user_id=current_user.id,
+        action="reset_password",
+        target=f"user:{user_id}",
+        detail="管理员重置用户密码并撤销其全部登录会话",
+        ip=get_client_ip(request),
+    )
+    await db.commit()
+    return success_response(None, message="密码重置成功")
 
 
 @router.put(

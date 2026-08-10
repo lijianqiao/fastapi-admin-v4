@@ -1,7 +1,9 @@
 /** 删除确认对话框
 
- * 使用 AlertDialog 实现二次确认。
+ * 使用 AlertDialog 实现二次确认。onConfirm 返回 false 或抛错时对话框保持打开。
  */
+
+import { useState } from "react"
 
 import {
   AlertDialog,
@@ -13,6 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Spinner } from "@/components/ui/spinner"
 
 interface ConfirmDialogProps {
   open: boolean
@@ -21,7 +24,7 @@ interface ConfirmDialogProps {
   description?: string
   confirmText?: string
   cancelText?: string
-  onConfirm: () => void
+  onConfirm: () => Promise<boolean>
   variant?: "default" | "destructive"
 }
 
@@ -35,6 +38,20 @@ export function ConfirmDialog({
   onConfirm,
   variant = "destructive",
 }: ConfirmDialogProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleConfirm = async () => {
+    setIsSubmitting(true)
+    try {
+      const ok = await onConfirm()
+      if (ok) {
+        onOpenChange(false)
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -43,8 +60,15 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>{cancelText}</AlertDialogCancel>
-          <AlertDialogAction variant={variant} onClick={onConfirm}>
+          <AlertDialogCancel disabled={isSubmitting}>
+            {cancelText}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            variant={variant}
+            onClick={handleConfirm}
+            disabled={isSubmitting}
+          >
+            {isSubmitting && <Spinner data-icon="inline-start" />}
             {confirmText}
           </AlertDialogAction>
         </AlertDialogFooter>

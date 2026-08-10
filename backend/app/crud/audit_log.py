@@ -6,7 +6,7 @@ from typing import TypedDict
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.base import ModelData
+from app.crud.base import CRUDBase
 from app.models.audit_log import AuditLog
 from app.models.user import User
 
@@ -31,15 +31,10 @@ class RecentLoginItem(TypedDict):
     created_at: datetime
 
 
-class CRUDAuditLog:
+class CRUDAuditLog(CRUDBase[AuditLog]):
     """Append and query audit records."""
 
-    async def create(self, db: AsyncSession, obj_data: ModelData) -> AuditLog:
-        """Add an audit record to the caller-owned transaction."""
-        audit_log = AuditLog(**dict(obj_data))
-        db.add(audit_log)
-        await db.flush()
-        return audit_log
+    model = AuditLog
 
     async def get_multi_filtered(
         self,

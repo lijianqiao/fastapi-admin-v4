@@ -6,28 +6,32 @@
 
 import { create } from "zustand"
 
-import type { UserInfo } from "@/types/auth"
+import type { CurrentUser } from "@/types/user"
 
 interface AuthState {
   /** access_token（仅内存） */
   token: string | null
   /** 当前用户信息 */
-  user: UserInfo | null
+  user: CurrentUser | null
   /** 权限码列表 */
   permissions: string[]
   /** 是否已认证 */
   isAuthenticated: boolean
   /** 是否正在加载 */
   isLoading: boolean
+  /** 应用启动时的会话恢复检查是否已完成 */
+  isInitialized: boolean
 
   /** 设置 token */
   setToken: (token: string | null) => void
   /** 设置当前用户 */
-  setUser: (user: UserInfo | null) => void
+  setUser: (user: CurrentUser | null) => void
   /** 设置权限码列表 */
   setPermissions: (permissions: string[]) => void
   /** 设置加载状态 */
   setLoading: (loading: boolean) => void
+  /** 标记会话恢复检查已完成 */
+  setInitialized: (initialized: boolean) => void
   /** 登出：清除所有状态 */
   logout: () => void
 }
@@ -38,6 +42,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   permissions: [],
   isAuthenticated: false,
   isLoading: false,
+  isInitialized: false,
 
   setToken: (token) => set({ token, isAuthenticated: token !== null }),
 
@@ -46,6 +51,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   setPermissions: (permissions) => set({ permissions }),
 
   setLoading: (isLoading) => set({ isLoading }),
+
+  setInitialized: (isInitialized) => set({ isInitialized }),
 
   logout: () =>
     set({

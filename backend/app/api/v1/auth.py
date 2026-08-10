@@ -54,7 +54,14 @@ def _error_response(
 
 
 def _require_trusted_origin(request: Request) -> None:
-    """Reject browser state-changing requests from untrusted origins."""
+    """Reject browser state-changing requests from untrusted origins.
+
+    Fails closed: at least one of Origin, Referer, or a same-origin
+    Sec-Fetch-Site signal must positively prove the request originated from
+    this application. A request carrying none of these signals is rejected
+    rather than assumed safe — otherwise a browser that omits Fetch Metadata
+    headers (pre-2021) together with a stripped Referer would sail through.
+    """
     fetch_site = request.headers.get("Sec-Fetch-Site", "").casefold()
     if fetch_site == "cross-site":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请求来源不受信任")
@@ -67,20 +74,18 @@ def _require_trusted_origin(request: Request) -> None:
         return
 
     referer = request.headers.get("Referer")
-    if referer is None:
-        if fetch_site == "same-site":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="请求来源不受信任",
-            )
+    if referer is not None:
+        parsed_referer = urlsplit(referer)
+        referer_origin = f"{parsed_referer.scheme}://{parsed_referer.netloc}"
+        if (
+            parsed_referer.scheme not in {"http", "https"}
+            or not parsed_referer.netloc
+            or referer_origin not in allowed_origins
+        ):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请求来源不受信任")
         return
-    parsed_referer = urlsplit(referer)
-    referer_origin = f"{parsed_referer.scheme}://{parsed_referer.netloc}"
-    if (
-        parsed_referer.scheme not in {"http", "https"}
-        or not parsed_referer.netloc
-        or referer_origin not in allowed_origins
-    ):
+
+    if fetch_site != "same-origin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请求来源不受信任")
 
 
@@ -186,7 +191,12 @@ async def login(
         return _error_response(status.HTTP_401_UNAUTHORIZED, "用户名或密码错误")
 
     await login_rate_limiter.clear(client_ip, credentials.username)
-    tokens = await create_login_session(db, user)
+    try:
+        tokens = await create_login_session(db, user)
+    except RefreshTokenError:
+        # Narrow race: the account was disabled/deleted or its token version
+        # changed between authenticate_user() and here.
+        return _error_response(status.HTTP_401_UNAUTHORIZED, "用户状态已变化，请重试")
     await log_audit(
         db,
         user_id=user.id,

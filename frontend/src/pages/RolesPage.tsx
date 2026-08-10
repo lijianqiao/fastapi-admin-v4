@@ -3,7 +3,7 @@
  * DataTable + 新增/编辑/删除/权限分配。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
 import { toast } from "sonner"
@@ -32,18 +32,29 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog"
 import { RoleFormDialog } from "@/components/roles/RoleFormDialog"
 import { AssignPermissionsDialog } from "@/components/roles/AssignPermissionsDialog"
 import api from "@/lib/api"
+import { usePaginatedQuery } from "@/hooks/use-paginated-query"
 import { usePermission } from "@/hooks/use-permission"
 import { PERMISSIONS } from "@/lib/constants"
 import type { RoleCreate, RoleUpdate, RoleWithPermissions } from "@/types/role"
 
 export function RolesPage() {
   const { hasPermission } = usePermission()
-  const [roles, setRoles] = useState<RoleWithPermissions[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState("")
-  const [isLoading, setIsLoading] = useState(true)
+
+  const {
+    items: roles,
+    total,
+    page,
+    setPage,
+    pageSize,
+    isLoading,
+    onPageSizeChange,
+    refetch: fetchRoles,
+  } = usePaginatedQuery<RoleWithPermissions>({
+    url: "/roles",
+    params: search ? { search } : {},
+    errorMessage: "获取角色列表失败",
+  })
 
   const [formOpen, setFormOpen] = useState(false)
   const [editingRole, setEditingRole] = useState<RoleWithPermissions | null>(
@@ -54,26 +65,9 @@ export function RolesPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteRole, setDeleteRole] = useState<RoleWithPermissions | null>(null)
 
-  const fetchRoles = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const params: Record<string, unknown> = { page, page_size: pageSize }
-      if (search) params.search = search
-      const response = await api.get("/roles", { params })
-      setRoles(response.data?.data?.items ?? [])
-      setTotal(response.data?.data?.total ?? 0)
-    } catch {
-      toast.error("获取角色列表失败")
-    } finally {
-      setIsLoading(false)
-    }
-  }, [page, pageSize, search])
-
-  useEffect(() => {
-    fetchRoles()
-  }, [fetchRoles])
-
-  const handleSubmit = async (data: RoleCreate | RoleUpdate) => {
+  const handleSubmit = async (
+    data: RoleCreate | RoleUpdate
+  ): Promise<boolean> => {
     try {
       if (editingRole) {
         await api.put(`/roles/${editingRole.id}`, data)
@@ -83,35 +77,42 @@ export function RolesPage() {
         toast.success("创建成功")
       }
       fetchRoles()
+      return true
     } catch {
       toast.error(editingRole ? "更新失败" : "创建失败")
+      return false
     }
   }
 
-  const handleAssignConfirm = async (permissionIds: number[]) => {
-    if (!assignRole) return
+  const handleAssignConfirm = async (
+    permissionIds: number[]
+  ): Promise<boolean> => {
+    if (!assignRole) return false
     try {
       await api.put(`/roles/${assignRole.id}/permissions`, {
         permission_ids: permissionIds,
       })
       toast.success("权限分配成功")
       fetchRoles()
+      return true
     } catch {
       toast.error("权限分配失败")
+      return false
     }
   }
 
-  const handleDeleteConfirm = async () => {
-    if (!deleteRole) return
+  const handleDeleteConfirm = async (): Promise<boolean> => {
+    if (!deleteRole) return false
     try {
       await api.delete(`/roles/${deleteRole.id}`)
       toast.success("删除成功")
       fetchRoles()
+      return true
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } }
       toast.error(error.response?.data?.message || "删除失败")
+      return false
     }
-    setDeleteOpen(false)
   }
 
   const columns = useMemo<ColumnDef<RoleWithPermissions>[]>(
@@ -251,10 +252,7 @@ export function RolesPage() {
         pageSize={pageSize}
         total={total}
         onPageChange={setPage}
-        onPageSizeChange={(size) => {
-          setPageSize(size)
-          setPage(1)
-        }}
+        onPageSizeChange={onPageSizeChange}
       />
 
       <RoleFormDialog

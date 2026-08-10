@@ -24,7 +24,7 @@ router = APIRouter()
     response_model=ResponseEnvelope[PaginatedData[RoleWithPermissions]],
 )
 async def list_roles(
-    page: int = Query(default=1, ge=1),
+    page: int = Query(default=1, ge=1, le=100_000),
     page_size: int = Query(default=10, ge=1, le=100),
     search: str | None = Query(default=None, min_length=1, max_length=100),
     db: AsyncSession = Depends(get_db),

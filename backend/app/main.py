@@ -23,6 +23,7 @@ from app.crud.base import RelatedObjectsNotFoundError
 from app.crud.role import RoleInUseError
 from app.crud.user import LastActiveSuperuserError
 
+
 def configure_logging() -> None:
     """
     配置应用日志。

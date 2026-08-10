@@ -24,6 +24,9 @@ os.environ["ENVIRONMENT"] = "test"
 os.environ["LOG_LEVEL"] = "warning"
 os.environ["COOKIE_SECURE"] = "false"
 os.environ["REGISTRATION_ENABLED"] = "true"
+# Pin explicitly so the suite doesn't silently inherit a developer's local .env
+# (whose ALLOWED_HOSTS is tuned for real browsers, not httpx's "test" host).
+os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1,test"
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -106,7 +109,13 @@ async def client(db_engine: AsyncEngine) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     try:
-        async with AsyncClient(transport=transport, base_url="http://test") as test_client:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            # Simulate a same-origin browser by default, matching what a real
+            # frontend sends; CSRF-specific tests override this per-request.
+            headers={"Sec-Fetch-Site": "same-origin"},
+        ) as test_client:
             yield test_client
     finally:
         app.dependency_overrides.clear()
@@ -121,6 +130,7 @@ async def test_permissions(db_session: AsyncSession) -> list[Permission]:
         {"name": "更新用户", "code": "user:update", "module": "用户管理"},
         {"name": "删除用户", "code": "user:delete", "module": "用户管理"},
         {"name": "分配角色", "code": "user:assign", "module": "用户管理"},
+        {"name": "重置密码", "code": "user:reset_password", "module": "用户管理"},
         {"name": "查看角色", "code": "role:read", "module": "角色管理"},
         {"name": "创建角色", "code": "role:create", "module": "角色管理"},
         {"name": "更新角色", "code": "role:update", "module": "角色管理"},

@@ -3,10 +3,9 @@
  * DataTable + 筛选。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
-import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -21,7 +20,7 @@ import {
 import { PageHeader } from "@/components/layout/PageHeader"
 import { DataTable } from "@/components/common/DataTable"
 import { Pagination } from "@/components/common/Pagination"
-import api from "@/lib/api"
+import { usePaginatedQuery } from "@/hooks/use-paginated-query"
 import type { AuditLog } from "@/types/audit"
 
 const ACTION_LABELS: Record<string, string> = {
@@ -50,34 +49,26 @@ const ACTION_ITEMS = [
 ]
 
 export function AuditLogsPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
   const [actionFilter, setActionFilter] = useState<string>("all")
   const [searchUserId, setSearchUserId] = useState("")
-  const [isLoading, setIsLoading] = useState(true)
 
-  const fetchLogs = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const params: Record<string, unknown> = { page, page_size: pageSize }
-      if (actionFilter !== "all") params.action = actionFilter
-      if (searchUserId) params.user_id = Number(searchUserId)
-
-      const response = await api.get("/audit-logs", { params })
-      setLogs(response.data?.data?.items ?? [])
-      setTotal(response.data?.data?.total ?? 0)
-    } catch {
-      toast.error("获取审计日志失败")
-    } finally {
-      setIsLoading(false)
-    }
-  }, [page, pageSize, actionFilter, searchUserId])
-
-  useEffect(() => {
-    fetchLogs()
-  }, [fetchLogs])
+  const {
+    items: logs,
+    total,
+    page,
+    setPage,
+    pageSize,
+    isLoading,
+    onPageSizeChange,
+  } = usePaginatedQuery<AuditLog>({
+    url: "/audit-logs",
+    params: {
+      ...(actionFilter !== "all" ? { action: actionFilter } : {}),
+      ...(searchUserId ? { user_id: Number(searchUserId) } : {}),
+    },
+    initialPageSize: 20,
+    errorMessage: "获取审计日志失败",
+  })
 
   const columns = useMemo<ColumnDef<AuditLog>[]>(
     () => [
@@ -182,10 +173,7 @@ export function AuditLogsPage() {
         pageSize={pageSize}
         total={total}
         onPageChange={setPage}
-        onPageSizeChange={(size) => {
-          setPageSize(size)
-          setPage(1)
-        }}
+        onPageSizeChange={onPageSizeChange}
       />
     </div>
   )

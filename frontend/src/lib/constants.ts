@@ -19,6 +19,7 @@ export const PERMISSIONS = {
   USER_UPDATE: "user:update",
   USER_DELETE: "user:delete",
   USER_ASSIGN: "user:assign",
+  USER_RESET_PASSWORD: "user:reset_password",
   // 角色模块
   ROLE_READ: "role:read",
   ROLE_CREATE: "role:create",

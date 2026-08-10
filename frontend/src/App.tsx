@@ -1,8 +1,11 @@
+import { useEffect } from "react"
 import { Routes, Route } from "react-router"
 
 import { AppLayout } from "@/components/layout/AppLayout"
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute"
 import { ErrorBoundary } from "@/components/common/ErrorBoundary"
+import { Spinner } from "@/components/ui/spinner"
+import { useAuth } from "@/hooks/use-auth"
 import { PERMISSIONS, ROUTES } from "@/lib/constants"
 import { AuditLogsPage } from "@/pages/AuditLogsPage"
 import { DashboardPage } from "@/pages/DashboardPage"
@@ -15,6 +18,21 @@ import { RolesPage } from "@/pages/RolesPage"
 import { UsersPage } from "@/pages/UsersPage"
 
 export function App() {
+  const { bootstrap, isInitialized } = useAuth()
+
+  // 应用启动时用 refresh_token cookie 尝试恢复会话，避免刷新页面被误判为未登录
+  useEffect(() => {
+    bootstrap()
+  }, [bootstrap])
+
+  if (!isInitialized) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Spinner className="size-6 text-muted-foreground" />
+      </div>
+    )
+  }
+
   return (
     <ErrorBoundary>
       <Routes>

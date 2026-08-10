@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from app.schemas.common import ApiModel
 
@@ -19,7 +19,7 @@ class AuditLogResponse(ApiModel):
     ip: str
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuditLogCreate(ApiModel):

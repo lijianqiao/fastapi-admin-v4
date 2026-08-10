@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     ALGORITHM: Literal["HS256"] = "HS256"
     JWT_ISSUER: str = "fastapi-admin"
     JWT_AUDIENCE: str = "fastapi-admin-api"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=1, le=60)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=1, le=30)
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, ge=1, le=30)
     REFRESH_SESSION_REPLAY_GRACE_DAYS: int = Field(default=1, ge=0, le=7)
     REFRESH_SESSION_HISTORY_RETENTION_DAYS: int = Field(default=30, ge=7, le=365)

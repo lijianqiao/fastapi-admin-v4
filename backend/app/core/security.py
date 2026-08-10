@@ -109,7 +109,7 @@ def _verify_and_update_password(
         _burn_both_dummy_hashes()
         return PasswordVerification(valid=False)
 
-    if hashed_password.startswith(("$2a$", "$2b$")):
+    if hashed_password.startswith(("$2a$", "$2b$", "$2x$", "$2y$")):
         try:
             # bcrypt <=4 silently truncated at 72 bytes. Reproduce that legacy
             # behavior once so long-password accounts can log in and migrate.
@@ -117,7 +117,7 @@ def _verify_and_update_password(
                 password.encode("utf-8")[:72],
                 hashed_password.encode("ascii"),
             )
-        except UnicodeEncodeError, ValueError:
+        except (UnicodeEncodeError, ValueError):
             _burn_both_dummy_hashes()
             return PasswordVerification(valid=False)
 
@@ -132,7 +132,7 @@ def _verify_and_update_password(
 
     try:
         valid, updated_hash = ARGON2_HASH.verify_and_update(password, hashed_password)
-    except UnknownHashError, ValueError:
+    except (UnknownHashError, ValueError):
         _burn_both_dummy_hashes()
         return PasswordVerification(valid=False)
 

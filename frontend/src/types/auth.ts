@@ -18,17 +18,3 @@ export interface RegisterRequest {
   email: string
   password: string
 }
-
-/** 当前用户信息 */
-export interface UserInfo {
-  id: number
-  username: string
-  email: string
-  nickname: string
-  is_active: boolean
-  is_superuser: boolean
-  created_at: string
-  updated_at: string
-  roles?: import("./role").Role[]
-  permissions?: string[]
-}

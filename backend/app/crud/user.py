@@ -314,6 +314,18 @@ class CRUDUser(CRUDBase[User]):
         """Check one permission through active roles without loading the full set."""
         return bool(await db.scalar(select(self.permission_exists(user_id, code))))
 
+    async def has_permission_or_superuser(self, db: AsyncSession, user: User, code: str) -> bool:
+        """Return True for a superuser, or a user holding the permission through active roles.
+
+        For endpoints that gate part of a response rather than the whole route
+        (so a 403 from ``require_permission`` would be wrong), keeping this
+        check here — rather than inline in a route — keeps authorization logic
+        in one reusable, testable place.
+        """
+        if user.is_superuser:
+            return True
+        return await self.has_permission(db, user.id, code)
+
     async def _lock_active_superuser_ids(self, db: AsyncSession) -> list[int]:
         """Serialize operations that can remove an active superuser."""
         stmt = (
@@ -346,6 +358,17 @@ class CRUDUser(CRUDBase[User]):
         await db.flush()
         return True
 
+    async def _lock_for_password_update(self, db: AsyncSession, user_id: int) -> User | None:
+        """Lock an active user row ahead of a password write."""
+        stmt = (
+            select(User)
+            .where(User.id == user_id, User.is_deleted.is_(False))
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def change_password(
         self,
         db: AsyncSession,
@@ -360,19 +383,31 @@ class CRUDUser(CRUDBase[User]):
         against the new hash and fails. The caller must follow up with
         ``revoke_all_refresh_sessions``, which owns the ``token_version`` bump.
         """
-        stmt = (
-            select(User)
-            .where(User.id == user_id, User.is_deleted.is_(False))
-            .with_for_update(key_share=True)
-            .execution_options(populate_existing=True)
-        )
-        result = await db.execute(stmt)
-        user = result.scalar_one_or_none()
+        user = await self._lock_for_password_update(db, user_id)
         if user is None:
             return False
 
         verification = await verify_and_update_password(old_password, user.hashed_password)
         if not verification.valid:
+            return False
+
+        user.hashed_password = await hash_password_async(new_password)
+        await db.flush()
+        return True
+
+    async def reset_password(
+        self,
+        db: AsyncSession,
+        user_id: int,
+        new_password: str,
+    ) -> bool:
+        """Administrator sets a new password without verifying the old one.
+
+        The caller must follow up with ``revoke_all_refresh_sessions``, which
+        owns the ``token_version`` bump, mirroring ``change_password``.
+        """
+        user = await self._lock_for_password_update(db, user_id)
+        if user is None:
             return False
 
         user.hashed_password = await hash_password_async(new_password)

@@ -33,15 +33,30 @@ import {
 } from "@/components/ui/field"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
 import api from "@/lib/api"
 import type { Role } from "@/types/role"
 import type { UserWithRoles } from "@/types/user"
+
+/** 角色数量通常不多，但仍按后端上限循环翻页，避免超过单页上限时静默丢数据 */
+async function fetchAllRoles(): Promise<Role[]> {
+  const pageSize = 100
+  const roles: Role[] = []
+  for (let page = 1; ; page += 1) {
+    const res = await api.get("/roles", { params: { page, page_size: pageSize } })
+    const items: Role[] = res.data?.data?.items ?? []
+    const total: number = res.data?.data?.total ?? 0
+    roles.push(...items)
+    if (items.length === 0 || roles.length >= total) break
+  }
+  return roles
+}
 
 interface AssignRolesDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   user: UserWithRoles | null
-  onConfirm: (roleIds: number[]) => Promise<void>
+  onConfirm: (roleIds: number[]) => Promise<boolean>
 }
 
 export function AssignRolesDialog({
@@ -53,15 +68,13 @@ export function AssignRolesDialog({
   const [roles, setRoles] = useState<Role[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     if (open) {
       setIsLoading(true)
-      api
-        .get("/roles", { params: { page_size: 100 } })
-        .then((res) => {
-          setRoles(res.data?.data?.items ?? [])
-        })
+      fetchAllRoles()
+        .then(setRoles)
         .finally(() => setIsLoading(false))
 
       if (user) {
@@ -79,8 +92,13 @@ export function AssignRolesDialog({
   }
 
   const handleConfirm = async () => {
-    await onConfirm(selectedIds)
-    onOpenChange(false)
+    setIsSubmitting(true)
+    try {
+      const ok = await onConfirm(selectedIds)
+      if (ok) onOpenChange(false)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -144,10 +162,12 @@ export function AssignRolesDialog({
             type="button"
             variant="outline"
             onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
           >
             取消
           </Button>
-          <Button type="button" onClick={handleConfirm}>
+          <Button type="button" onClick={handleConfirm} disabled={isSubmitting}>
+            {isSubmitting && <Spinner data-icon="inline-start" />}
             确定分配
           </Button>
         </DialogFooter>

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.common import ApiModel, PositiveId, unique_ids
 from app.schemas.permission import PermissionResponse
@@ -41,7 +41,7 @@ class RoleResponse(ApiModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RoleWithPermissions(RoleResponse):

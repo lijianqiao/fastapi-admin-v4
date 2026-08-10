@@ -3,7 +3,7 @@
  * DataTable + 搜索/筛选 + 新增/编辑/删除/角色分配。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
 import { toast } from "sonner"
@@ -14,6 +14,7 @@ import {
   PencilEdit02Icon,
   Delete02Icon,
   UserAssign02Icon,
+  ResetPasswordIcon,
 } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -39,7 +40,9 @@ import { Pagination } from "@/components/common/Pagination"
 import { ConfirmDialog } from "@/components/common/ConfirmDialog"
 import { UserFormDialog } from "@/components/users/UserFormDialog"
 import { AssignRolesDialog } from "@/components/users/AssignRolesDialog"
+import { ResetPasswordDialog } from "@/components/users/ResetPasswordDialog"
 import api from "@/lib/api"
+import { usePaginatedQuery } from "@/hooks/use-paginated-query"
 import { usePermission } from "@/hooks/use-permission"
 import { PERMISSIONS } from "@/lib/constants"
 import type { UserCreate, UserUpdate, UserWithRoles } from "@/types/user"
@@ -53,42 +56,37 @@ const STATUS_ITEMS = [
 
 export function UsersPage() {
   const { hasPermission } = usePermission()
-  const [users, setUsers] = useState<UserWithRoles[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [isLoading, setIsLoading] = useState(true)
+
+  const {
+    items: users,
+    total,
+    page,
+    setPage,
+    pageSize,
+    isLoading,
+    onPageSizeChange,
+    refetch: fetchUsers,
+  } = usePaginatedQuery<UserWithRoles>({
+    url: "/users",
+    params: {
+      ...(search ? { search } : {}),
+      ...(statusFilter !== "all" ? { is_active: statusFilter === "active" } : {}),
+    },
+    errorMessage: "获取用户列表失败",
+  })
 
   // Dialog 状态
   const [formOpen, setFormOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<UserWithRoles | null>(null)
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignUser, setAssignUser] = useState<UserWithRoles | null>(null)
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(false)
+  const [resetPasswordUser, setResetPasswordUser] =
+    useState<UserWithRoles | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteUser, setDeleteUser] = useState<UserWithRoles | null>(null)
-
-  const fetchUsers = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const params: Record<string, unknown> = { page, page_size: pageSize }
-      if (search) params.search = search
-      if (statusFilter !== "all") params.is_active = statusFilter === "active"
-
-      const response = await api.get("/users", { params })
-      setUsers(response.data?.data?.items ?? [])
-      setTotal(response.data?.data?.total ?? 0)
-    } catch {
-      toast.error("获取用户列表失败")
-    } finally {
-      setIsLoading(false)
-    }
-  }, [page, pageSize, search, statusFilter])
-
-  useEffect(() => {
-    fetchUsers()
-  }, [fetchUsers])
 
   const handleCreate = () => {
     setEditingUser(null)
@@ -105,12 +103,19 @@ export function UsersPage() {
     setAssignOpen(true)
   }
 
+  const handleResetPassword = (user: UserWithRoles) => {
+    setResetPasswordUser(user)
+    setResetPasswordOpen(true)
+  }
+
   const handleDelete = (user: UserWithRoles) => {
     setDeleteUser(user)
     setDeleteOpen(true)
   }
 
-  const handleSubmit = async (data: UserCreate | UserUpdate) => {
+  const handleSubmit = async (
+    data: UserCreate | UserUpdate
+  ): Promise<boolean> => {
     try {
       if (editingUser) {
         await api.put(`/users/${editingUser.id}`, data)
@@ -120,32 +125,53 @@ export function UsersPage() {
         toast.success("创建成功")
       }
       fetchUsers()
+      return true
     } catch {
       toast.error(editingUser ? "更新失败" : "创建失败")
+      return false
     }
   }
 
-  const handleAssignConfirm = async (roleIds: number[]) => {
-    if (!assignUser) return
+  const handleAssignConfirm = async (roleIds: number[]): Promise<boolean> => {
+    if (!assignUser) return false
     try {
       await api.put(`/users/${assignUser.id}/roles`, { role_ids: roleIds })
       toast.success("角色分配成功")
       fetchUsers()
+      return true
     } catch {
       toast.error("角色分配失败")
+      return false
     }
   }
 
-  const handleDeleteConfirm = async () => {
-    if (!deleteUser) return
+  const handleResetPasswordConfirm = async (
+    newPassword: string
+  ): Promise<boolean> => {
+    if (!resetPasswordUser) return false
+    try {
+      await api.put(`/users/${resetPasswordUser.id}/password`, {
+        new_password: newPassword,
+      })
+      toast.success("密码重置成功")
+      return true
+    } catch {
+      toast.error("密码重置失败")
+      return false
+    }
+  }
+
+  const handleDeleteConfirm = async (): Promise<boolean> => {
+    if (!deleteUser) return false
     try {
       await api.delete(`/users/${deleteUser.id}`)
       toast.success("删除成功")
       fetchUsers()
+      return true
     } catch {
       toast.error("删除失败")
+      return false
     }
-    setDeleteOpen(false)
   }
 
   const columns = useMemo<ColumnDef<UserWithRoles>[]>(
@@ -220,6 +246,14 @@ export function UsersPage() {
                   >
                     <UserAssign02Icon />
                     <span>分配角色</span>
+                  </DropdownMenuItem>
+                )}
+                {hasPermission(PERMISSIONS.USER_RESET_PASSWORD) && (
+                  <DropdownMenuItem
+                    onClick={() => handleResetPassword(row.original)}
+                  >
+                    <ResetPasswordIcon />
+                    <span>重置密码</span>
                   </DropdownMenuItem>
                 )}
                 {hasPermission(PERMISSIONS.USER_DELETE) && (
@@ -303,10 +337,7 @@ export function UsersPage() {
         pageSize={pageSize}
         total={total}
         onPageChange={setPage}
-        onPageSizeChange={(size) => {
-          setPageSize(size)
-          setPage(1)
-        }}
+        onPageSizeChange={onPageSizeChange}
       />
 
       {/* 对话框 */}
@@ -321,6 +352,12 @@ export function UsersPage() {
         onOpenChange={setAssignOpen}
         user={assignUser}
         onConfirm={handleAssignConfirm}
+      />
+      <ResetPasswordDialog
+        open={resetPasswordOpen}
+        onOpenChange={setResetPasswordOpen}
+        user={resetPasswordUser}
+        onConfirm={handleResetPasswordConfirm}
       />
       <ConfirmDialog
         open={deleteOpen}

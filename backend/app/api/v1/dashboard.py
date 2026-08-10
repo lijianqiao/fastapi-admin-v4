@@ -23,9 +23,7 @@ async def get_dashboard(
     """Return shared counters and gate audit-derived login data separately."""
     stats = DashboardStats.model_validate(await dashboard_crud.get_counts(db))
 
-    can_read_audit = current_user.is_superuser
-    if not can_read_audit:
-        can_read_audit = await user_crud.has_permission(db, current_user.id, "audit:read")
+    can_read_audit = await user_crud.has_permission_or_superuser(db, current_user, "audit:read")
 
     recent_logs: list[RecentLoginItem] = []
     if can_read_audit:

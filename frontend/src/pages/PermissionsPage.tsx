@@ -18,27 +18,12 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field"
 import {
   Empty,
   EmptyContent,
@@ -49,7 +34,6 @@ import {
 } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -68,23 +52,16 @@ import {
 } from "@/components/ui/table"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { ConfirmDialog } from "@/components/common/ConfirmDialog"
+import { PermissionFormDialog } from "@/components/permissions/PermissionFormDialog"
 import api from "@/lib/api"
 import { usePermission } from "@/hooks/use-permission"
 import { PERMISSIONS } from "@/lib/constants"
-import type { GroupedPermissions, Permission } from "@/types/permission"
-
-import { Controller, useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
-
-const schema = z.object({
-  name: z.string().min(1, "请输入权限名称").max(100),
-  code: z.string().min(1, "请输入权限码").max(100),
-  module: z.string().max(50).optional().default(""),
-  description: z.string().max(500).optional().default(""),
-})
-
-type FormData = z.infer<typeof schema>
+import type {
+  GroupedPermissions,
+  Permission,
+  PermissionCreate,
+  PermissionUpdate,
+} from "@/types/permission"
 
 export function PermissionsPage() {
   const { hasPermission } = usePermission()
@@ -98,16 +75,11 @@ export function PermissionsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deletePerm, setDeletePerm] = useState<Permission | null>(null)
 
-  const form = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: { name: "", code: "", module: "", description: "" },
-  })
-
   const fetchPermissions = useCallback(async () => {
     setIsLoading(true)
     try {
       const response = await api.get("/permissions", {
-        params: { grouped: true, page_size: 200 },
+        params: { grouped: true },
       })
       setGrouped(response.data?.data ?? {})
     } catch {
@@ -147,22 +119,17 @@ export function PermissionsPage() {
 
   const handleCreate = () => {
     setEditingPerm(null)
-    form.reset({ name: "", code: "", module: "", description: "" })
     setFormOpen(true)
   }
 
   const handleEdit = (perm: Permission) => {
     setEditingPerm(perm)
-    form.reset({
-      name: perm.name,
-      code: perm.code,
-      module: perm.module,
-      description: perm.description,
-    })
     setFormOpen(true)
   }
 
-  const handleSubmit = async (data: FormData) => {
+  const handleSubmit = async (
+    data: PermissionCreate | PermissionUpdate
+  ): Promise<boolean> => {
     try {
       if (editingPerm) {
         await api.put(`/permissions/${editingPerm.id}`, data)
@@ -172,22 +139,24 @@ export function PermissionsPage() {
         toast.success("创建成功")
       }
       fetchPermissions()
+      return true
     } catch {
       toast.error(editingPerm ? "更新失败" : "创建失败")
+      return false
     }
-    setFormOpen(false)
   }
 
-  const handleDeleteConfirm = async () => {
-    if (!deletePerm) return
+  const handleDeleteConfirm = async (): Promise<boolean> => {
+    if (!deletePerm) return false
     try {
       await api.delete(`/permissions/${deletePerm.id}`)
       toast.success("删除成功")
       fetchPermissions()
+      return true
     } catch {
       toast.error("删除失败")
+      return false
     }
-    setDeleteOpen(false)
   }
 
   return (
@@ -353,104 +322,12 @@ export function PermissionsPage() {
         </div>
       )}
 
-      {/* 新增/编辑对话框 */}
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingPerm ? "编辑权限" : "新增权限"}</DialogTitle>
-            <DialogDescription>
-              {editingPerm ? "修改权限信息" : "创建一个新的权限定义"}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={form.handleSubmit(handleSubmit)}>
-            <FieldGroup>
-              <Controller
-                control={form.control}
-                name="name"
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="permission-name">权限名称</FieldLabel>
-                    <Input
-                      id="permission-name"
-                      placeholder="如：查看用户"
-                      aria-invalid={fieldState.invalid}
-                      {...field}
-                    />
-                    <FieldError errors={[fieldState.error]} />
-                  </Field>
-                )}
-              />
-              <Controller
-                control={form.control}
-                name="code"
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="permission-code">权限码</FieldLabel>
-                    <Input
-                      id="permission-code"
-                      placeholder="如：user:read"
-                      className="font-mono"
-                      aria-invalid={fieldState.invalid}
-                      {...field}
-                    />
-                    <FieldDescription>
-                      格式为 <code>模块:动作</code>，如 <code>user:read</code>。
-                    </FieldDescription>
-                    <FieldError errors={[fieldState.error]} />
-                  </Field>
-                )}
-              />
-              <Controller
-                control={form.control}
-                name="module"
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="permission-module">
-                      所属模块
-                    </FieldLabel>
-                    <Input
-                      id="permission-module"
-                      placeholder="如：用户管理"
-                      aria-invalid={fieldState.invalid}
-                      {...field}
-                    />
-                    <FieldError errors={[fieldState.error]} />
-                  </Field>
-                )}
-              />
-              <Controller
-                control={form.control}
-                name="description"
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="permission-description">
-                      描述
-                    </FieldLabel>
-                    <Textarea
-                      id="permission-description"
-                      placeholder="权限描述（选填）"
-                      className="resize-none"
-                      aria-invalid={fieldState.invalid}
-                      {...field}
-                    />
-                    <FieldError errors={[fieldState.error]} />
-                  </Field>
-                )}
-              />
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setFormOpen(false)}
-                >
-                  取消
-                </Button>
-                <Button type="submit">确定</Button>
-              </DialogFooter>
-            </FieldGroup>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <PermissionFormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        permission={editingPerm}
+        onSubmit={handleSubmit}
+      />
 
       <ConfirmDialog
         open={deleteOpen}

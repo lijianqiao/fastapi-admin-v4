@@ -1,6 +1,8 @@
-/** 角色新增/编辑表单对话框 */
+/** 管理员重置用户密码对话框
 
-import { useEffect } from "react"
+ * 不需要旧密码；提交后目标用户的全部登录会话会被后端撤销。
+ */
+
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -22,79 +24,72 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
-import { Textarea } from "@/components/ui/textarea"
-import type { Role, RoleCreate, RoleUpdate } from "@/types/role"
+import type { User } from "@/types/user"
 
-const schema = z.object({
-  name: z.string().min(1, "请输入角色名").max(50),
-  description: z.string().max(500).optional().default(""),
-})
+const schema = z
+  .object({
+    new_password: z.string().min(8, "密码至少 8 个字符").max(128),
+    confirm_password: z.string().min(1, "请确认新密码"),
+  })
+  .refine((data) => data.new_password === data.confirm_password, {
+    message: "两次输入的密码不一致",
+    path: ["confirm_password"],
+  })
 
 type FormData = z.infer<typeof schema>
 
-interface RoleFormDialogProps {
+interface ResetPasswordDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  role?: Role | null
-  onSubmit: (data: RoleCreate | RoleUpdate) => Promise<boolean>
+  user: User | null
+  onConfirm: (newPassword: string) => Promise<boolean>
 }
 
-export function RoleFormDialog({
+export function ResetPasswordDialog({
   open,
   onOpenChange,
-  role,
-  onSubmit,
-}: RoleFormDialogProps) {
-  const isEdit = !!role
-
+  user,
+  onConfirm,
+}: ResetPasswordDialogProps) {
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: {
-      name: "",
-      description: "",
-    },
+    defaultValues: { new_password: "", confirm_password: "" },
   })
 
-  useEffect(() => {
-    if (open) {
-      form.reset({
-        name: role?.name ?? "",
-        description: role?.description ?? "",
-      })
+  const handleOpenChange = (next: boolean) => {
+    if (next) {
+      form.reset({ new_password: "", confirm_password: "" })
     }
-  }, [open, role, form])
+    onOpenChange(next)
+  }
 
   const handleSubmit = async (data: FormData) => {
-    const payload = {
-      name: data.name,
-      description: data.description || undefined,
-    }
-    const ok = isEdit
-      ? await onSubmit(payload as RoleUpdate)
-      : await onSubmit(payload as RoleCreate)
-    if (ok) onOpenChange(false)
+    const ok = await onConfirm(data.new_password)
+    if (ok) handleOpenChange(false)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "编辑角色" : "新增角色"}</DialogTitle>
+          <DialogTitle>重置密码</DialogTitle>
           <DialogDescription>
-            {isEdit ? "修改角色信息" : "创建一个新角色"}
+            为用户「{user?.username}」设置新密码，无需知道原密码。重置后该用户的所有登录会话将被撤销。
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(handleSubmit)}>
           <FieldGroup>
             <Controller
               control={form.control}
-              name="name"
+              name="new_password"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="role-name">角色名称</FieldLabel>
+                  <FieldLabel htmlFor="reset-new-password">新密码</FieldLabel>
                   <Input
-                    id="role-name"
-                    placeholder="请输入角色名称"
+                    id="reset-new-password"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="至少 8 个字符"
                     aria-invalid={fieldState.invalid}
                     {...field}
                   />
@@ -104,14 +99,17 @@ export function RoleFormDialog({
             />
             <Controller
               control={form.control}
-              name="description"
+              name="confirm_password"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="role-description">描述</FieldLabel>
-                  <Textarea
-                    id="role-description"
-                    placeholder="请输入角色描述（选填）"
-                    className="resize-none"
+                  <FieldLabel htmlFor="reset-confirm-password">
+                    确认新密码
+                  </FieldLabel>
+                  <Input
+                    id="reset-confirm-password"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="请再次输入新密码"
                     aria-invalid={fieldState.invalid}
                     {...field}
                   />
@@ -123,7 +121,7 @@ export function RoleFormDialog({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => onOpenChange(false)}
+                onClick={() => handleOpenChange(false)}
                 disabled={form.formState.isSubmitting}
               >
                 取消
@@ -132,7 +130,7 @@ export function RoleFormDialog({
                 {form.formState.isSubmitting && (
                   <Spinner data-icon="inline-start" />
                 )}
-                确定
+                确定重置
               </Button>
             </DialogFooter>
           </FieldGroup>

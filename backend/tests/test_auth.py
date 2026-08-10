@@ -175,6 +175,20 @@ async def test_login_rejects_same_site_browser_without_origin(client: AsyncClien
     assert_error(response, 403)
 
 
+async def test_login_rejects_request_with_no_origin_signal_at_all(
+    client: AsyncClient,
+) -> None:
+    """A browser with no Fetch Metadata support and a stripped Referer must
+    not be treated as trustworthy just because it presents no evidence."""
+    response = await client.post(
+        "/api/v1/auth/login",
+        data={"username": "testuser", "password": "testpassword123"},
+        headers={"Sec-Fetch-Site": ""},
+    )
+
+    assert_error(response, 403)
+
+
 async def test_register_rejects_cross_site_browser_origin(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/auth/register",

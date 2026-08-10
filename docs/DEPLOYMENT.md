@@ -364,6 +364,8 @@ A: 使用 `psycopg[binary]` 包含预编译二进制。如果仍失败，尝试�
 uv add "psycopg[binary]>=3.2" --no-build
 ```
 
+生产部署建议：`psycopg[binary]` 自带静态编译的 libpq，版本可能落后于系统安全补丁，官方建议仅用于开发/测试。生产镜像若已具备构建工具链和系统 libpq，优先改用 `psycopg[c]`（对源码编译、链接系统 libpq），随系统一起获得 TLS/协议层的安全更新。
+
 ### Q: 数据库迁移失败？
 
 A: 确保 PostgreSQL 已启动；Web 连接使用 `DATABASE_URL`，迁移进程另行注入

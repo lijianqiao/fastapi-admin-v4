@@ -30,6 +30,7 @@ build/
 *.swp
 *.swo
 .workbuddy/
+.claude/
 
 # ===== 系统文件 =====
 .DS_Store

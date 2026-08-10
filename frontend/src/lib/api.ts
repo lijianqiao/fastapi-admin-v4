@@ -10,6 +10,7 @@ import axios, {
 } from "axios"
 
 import { ROUTES } from "@/lib/constants"
+import { useAuthStore } from "@/store/auth"
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1"
 
@@ -23,14 +24,30 @@ const api: AxiosInstance = axios.create({
 // ===== Token 管理（内存，不持久化） =====
 let accessToken: string | null = null
 
-/** 设置 access_token */
+/** 设置 access_token，同时同步到 zustand store，避免两处状态不一致 */
 export function setAccessToken(token: string | null): void {
   accessToken = token
+  useAuthStore.getState().setToken(token)
 }
 
 /** 获取 access_token */
 export function getAccessToken(): string | null {
   return accessToken
+}
+
+/** 用 refresh_token cookie 换取新的 access_token */
+export async function refreshAccessToken(): Promise<string> {
+  const response = await axios.post(
+    `${BASE_URL}/auth/refresh`,
+    {},
+    { withCredentials: true }
+  )
+  const newToken = response.data?.data?.access_token
+  if (!newToken) {
+    throw new Error("No access_token in refresh response")
+  }
+  setAccessToken(newToken)
+  return newToken
 }
 
 // ===== 请求拦截器：自动携带 access_token =====
@@ -72,6 +89,11 @@ api.interceptors.response.use(
       return Promise.reject(error)
     }
 
+    // 登录接口本身返回 401（账号或密码错误）不触发刷新，交给调用方处理
+    if (originalRequest.url?.includes("/auth/login")) {
+      return Promise.reject(error)
+    }
+
     // 如果是刷新 token 的请求失败，直接跳转登录
     if (originalRequest.url?.includes("/auth/refresh")) {
       setAccessToken(null)
@@ -94,19 +116,10 @@ api.interceptors.response.use(
     isRefreshing = true
 
     try {
-      const response = await axios.post(
-        `${BASE_URL}/auth/refresh`,
-        {},
-        { withCredentials: true }
-      )
-      const newToken = response.data?.data?.access_token
-      if (newToken) {
-        setAccessToken(newToken)
-        processQueue(null)
-        originalRequest.headers.Authorization = `Bearer ${newToken}`
-        return api(originalRequest)
-      }
-      throw new Error("No access_token in refresh response")
+      const newToken = await refreshAccessToken()
+      processQueue(null)
+      originalRequest.headers.Authorization = `Bearer ${newToken}`
+      return api(originalRequest)
     } catch (refreshError) {
       setAccessToken(null)
       processQueue(refreshError)

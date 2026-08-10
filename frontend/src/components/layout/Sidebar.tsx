@@ -20,6 +20,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
+import { usePermission } from "@/hooks/use-permission"
 import { ROUTES, PERMISSIONS } from "@/lib/constants"
 
 interface SidebarProps {
@@ -64,9 +65,14 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 function NavList() {
+  const { hasPermission } = usePermission()
+  const visibleItems = NAV_ITEMS.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  )
+
   return (
     <nav className="flex flex-col gap-1 p-3">
-      {NAV_ITEMS.map((item) => {
+      {visibleItems.map((item) => {
         const Icon = item.icon
         return (
           <NavLink

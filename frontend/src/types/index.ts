@@ -7,12 +7,7 @@ export type {
   ApiError,
   PaginationParams,
 } from "./api"
-export type {
-  LoginRequest,
-  TokenResponse,
-  RegisterRequest,
-  UserInfo,
-} from "./auth"
+export type { LoginRequest, TokenResponse, RegisterRequest } from "./auth"
 export type {
   User,
   UserWithRoles,
