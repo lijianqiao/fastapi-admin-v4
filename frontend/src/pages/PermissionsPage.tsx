@@ -16,6 +16,7 @@ import {
 } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   DropdownMenu,
@@ -159,6 +160,16 @@ export function PermissionsPage() {
     }
   }
 
+  const handleToggleActive = async (perm: Permission, next: boolean) => {
+    try {
+      await api.put(`/permissions/${perm.id}`, { is_active: next })
+      toast.success(next ? "已启用权限" : "已禁用权限")
+      fetchPermissions()
+    } catch {
+      toast.error("更新状态失败")
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -248,6 +259,7 @@ export function PermissionsPage() {
                       <TableHead>权限名称</TableHead>
                       <TableHead>权限码</TableHead>
                       <TableHead>描述</TableHead>
+                      <TableHead>状态</TableHead>
                       <TableHead>创建时间</TableHead>
                       <TableHead className="w-20">操作</TableHead>
                     </TableRow>
@@ -265,6 +277,32 @@ export function PermissionsPage() {
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {perm.description || "-"}
+                        </TableCell>
+                        <TableCell>
+                          {hasPermission(PERMISSIONS.PERMISSION_UPDATE) ? (
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={perm.is_active}
+                                onCheckedChange={(checked) =>
+                                  handleToggleActive(perm, checked)
+                                }
+                                aria-label={
+                                  perm.is_active ? "禁用权限" : "启用权限"
+                                }
+                              />
+                              <span className="text-sm text-muted-foreground">
+                                {perm.is_active ? "启用" : "禁用"}
+                              </span>
+                            </div>
+                          ) : (
+                            <Badge
+                              variant={
+                                perm.is_active ? "default" : "destructive"
+                              }
+                            >
+                              {perm.is_active ? "启用" : "禁用"}
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {dayjs(perm.created_at).format("YYYY-MM-DD")}

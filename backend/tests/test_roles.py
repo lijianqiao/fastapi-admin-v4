@@ -86,6 +86,34 @@ async def test_update_role(
     assert response.json()["data"]["description"] == "更新后的描述"
 
 
+async def test_toggle_role_is_active(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: Headers,
+) -> None:
+    role = Role(name="可切换状态角色", description="用于状态开关测试")
+    db_session.add(role)
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/v1/roles/{role.id}",
+        json={"is_active": False},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["is_active"] is False
+
+    response = await client.put(
+        f"/api/v1/roles/{role.id}",
+        json={"is_active": True},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["is_active"] is True
+
+
 async def test_delete_role_without_users(
     client: AsyncClient,
     db_session: AsyncSession,

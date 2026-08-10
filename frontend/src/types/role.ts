@@ -7,6 +7,7 @@ export interface Role {
   id: number
   name: string
   description: string
+  is_active: boolean
   created_at: string
   updated_at: string
 }
@@ -28,6 +29,7 @@ export interface RoleCreate {
 export interface RoleUpdate {
   name?: string
   description?: string
+  is_active?: boolean
 }
 
 /** 分配权限请求 */

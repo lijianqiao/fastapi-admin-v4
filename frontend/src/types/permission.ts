@@ -7,6 +7,7 @@ export interface Permission {
   code: string
   module: string
   description: string
+  is_active: boolean
   created_at: string
   updated_at: string
 }
@@ -25,6 +26,7 @@ export interface PermissionUpdate {
   code?: string
   module?: string
   description?: string
+  is_active?: boolean
 }
 
 /** 权限查询参数 */

@@ -150,6 +150,80 @@ async def test_soft_deleted_role_no_longer_grants_permission(
     assert created is None
 
 
+async def test_inactive_role_no_longer_grants_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    login_user: LoginUser,
+) -> None:
+    create_permission = Permission(
+        name="创建权限",
+        code="permission:create",
+        module="权限管理",
+    )
+    role = Role(name="即将禁用的角色", permissions=[create_permission])
+    user = User(
+        username="inactive_role_user",
+        email="inactive-role@example.com",
+        hashed_password=hash_password("inactiverolepassword"),
+        roles=[role],
+    )
+    db_session.add(user)
+    await db_session.commit()
+    headers = await login_user(user.username, "inactiverolepassword")
+
+    role.is_active = False
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/permissions",
+        json={"name": "不应创建", "code": "inactive-role:bypass", "module": "安全"},
+        headers=headers,
+    )
+
+    assert_error(response, 403)
+    created = await db_session.scalar(
+        select(Permission).where(Permission.code == "inactive-role:bypass")
+    )
+    assert created is None
+
+
+async def test_inactive_permission_no_longer_grants_access(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    login_user: LoginUser,
+) -> None:
+    create_permission = Permission(
+        name="创建权限",
+        code="permission:create",
+        module="权限管理",
+    )
+    role = Role(name="权限将被禁用的角色", permissions=[create_permission])
+    user = User(
+        username="inactive_perm_user",
+        email="inactive-perm@example.com",
+        hashed_password=hash_password("inactivepermpassword"),
+        roles=[role],
+    )
+    db_session.add(user)
+    await db_session.commit()
+    headers = await login_user(user.username, "inactivepermpassword")
+
+    create_permission.is_active = False
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/permissions",
+        json={"name": "不应创建", "code": "inactive-perm:bypass", "module": "安全"},
+        headers=headers,
+    )
+
+    assert_error(response, 403)
+    created = await db_session.scalar(
+        select(Permission).where(Permission.code == "inactive-perm:bypass")
+    )
+    assert created is None
+
+
 async def test_update_permission(
     client: AsyncClient,
     auth_headers: Headers,
@@ -164,6 +238,31 @@ async def test_update_permission(
 
     assert response.status_code == 200, response.text
     assert response.json()["data"]["description"] == "更新后的描述"
+
+
+async def test_toggle_permission_is_active(
+    client: AsyncClient,
+    auth_headers: Headers,
+    test_permissions: list[Permission],
+) -> None:
+    permission = test_permissions[0]
+    response = await client.put(
+        f"/api/v1/permissions/{permission.id}",
+        json={"is_active": False},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["is_active"] is False
+
+    response = await client.put(
+        f"/api/v1/permissions/{permission.id}",
+        json={"is_active": True},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["is_active"] is True
 
 
 async def test_delete_permission(

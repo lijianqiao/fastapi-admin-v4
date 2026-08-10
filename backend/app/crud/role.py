@@ -128,7 +128,7 @@ class CRUDRole(CRUDBase[Role]):
         if role is None:
             return None
         for field, value in obj_data.items():
-            if field in {"name", "description"}:
+            if field in {"name", "description", "is_active"}:
                 setattr(role, field, value)
         await db.flush()
         return role

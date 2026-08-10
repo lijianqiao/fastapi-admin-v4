@@ -39,6 +39,7 @@ class PermissionUpdate(ApiModel):
     )
     module: str | None = Field(default=None, max_length=50)
     description: str | None = Field(default=None, max_length=500)
+    is_active: bool | None = None
 
     @field_validator("code", mode="before")
     @classmethod
@@ -66,6 +67,7 @@ class PermissionResponse(ApiModel):
     code: str
     module: str
     description: str
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 

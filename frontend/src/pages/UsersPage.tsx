@@ -3,7 +3,7 @@
  * DataTable + 搜索/筛选 + 新增/编辑/删除/角色分配。
  */
 
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
 import { toast } from "sonner"
@@ -18,6 +18,8 @@ import {
 } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
+import { useAuthStore } from "@/store/auth"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,6 +58,7 @@ const STATUS_ITEMS = [
 
 export function UsersPage() {
   const { hasPermission } = usePermission()
+  const currentUserId = useAuthStore((state) => state.user?.id)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
@@ -174,6 +177,24 @@ export function UsersPage() {
     }
   }
 
+  const handleToggleActive = useCallback(
+    async (user: UserWithRoles, next: boolean) => {
+      if (user.id === currentUserId && !next) {
+        toast.error("不能停用当前登录用户")
+        return
+      }
+      try {
+        await api.put(`/users/${user.id}`, { is_active: next })
+        toast.success(next ? "已启用用户" : "已禁用用户")
+        fetchUsers()
+      } catch (err: unknown) {
+        const error = err as { response?: { data?: { message?: string } } }
+        toast.error(error.response?.data?.message || "更新状态失败")
+      }
+    },
+    [currentUserId, fetchUsers]
+  )
+
   const columns = useMemo<ColumnDef<UserWithRoles>[]>(
     () => [
       {
@@ -208,11 +229,37 @@ export function UsersPage() {
       {
         accessorKey: "is_active",
         header: "状态",
-        cell: ({ row }) => (
-          <Badge variant={row.original.is_active ? "default" : "destructive"}>
-            {row.original.is_active ? "启用" : "禁用"}
-          </Badge>
-        ),
+        cell: ({ row }) => {
+          const user = row.original
+          const canUpdate = hasPermission(PERMISSIONS.USER_UPDATE)
+          if (!canUpdate) {
+            return (
+              <Badge variant={user.is_active ? "default" : "destructive"}>
+                {user.is_active ? "启用" : "禁用"}
+              </Badge>
+            )
+          }
+          const isSelf = user.id === currentUserId
+          return (
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={user.is_active}
+                disabled={isSelf && user.is_active}
+                onCheckedChange={(checked) => handleToggleActive(user, checked)}
+                aria-label={
+                  isSelf && user.is_active
+                    ? "不能停用当前登录用户"
+                    : user.is_active
+                      ? "禁用用户"
+                      : "启用用户"
+                }
+              />
+              <span className="text-sm text-muted-foreground">
+                {user.is_active ? "启用" : "禁用"}
+              </span>
+            </div>
+          )
+        },
       },
       {
         accessorKey: "created_at",
@@ -271,7 +318,7 @@ export function UsersPage() {
         ),
       },
     ],
-    [hasPermission]
+    [hasPermission, currentUserId, handleToggleActive]
   )
 
   return (

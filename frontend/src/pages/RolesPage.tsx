@@ -3,7 +3,7 @@
  * DataTable + 新增/编辑/删除/权限分配。
  */
 
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
 import { toast } from "sonner"
@@ -17,6 +17,7 @@ import {
 } from "@/lib/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -115,6 +116,19 @@ export function RolesPage() {
     }
   }
 
+  const handleToggleActive = useCallback(
+    async (role: RoleWithPermissions, next: boolean) => {
+      try {
+        await api.put(`/roles/${role.id}`, { is_active: next })
+        toast.success(next ? "已启用角色" : "已禁用角色")
+        fetchRoles()
+      } catch {
+        toast.error("更新状态失败")
+      }
+    },
+    [fetchRoles]
+  )
+
   const columns = useMemo<ColumnDef<RoleWithPermissions>[]>(
     () => [
       {
@@ -144,6 +158,35 @@ export function RolesPage() {
         cell: ({ row }) => (
           <Badge variant="outline">{row.original.user_count ?? 0}</Badge>
         ),
+      },
+      {
+        accessorKey: "is_active",
+        header: "状态",
+        cell: ({ row }) => {
+          const role = row.original
+          const canUpdate = hasPermission(PERMISSIONS.ROLE_UPDATE)
+          if (!canUpdate) {
+            return (
+              <Badge variant={role.is_active ? "default" : "destructive"}>
+                {role.is_active ? "启用" : "禁用"}
+              </Badge>
+            )
+          }
+          return (
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={role.is_active}
+                onCheckedChange={(checked) =>
+                  handleToggleActive(role, checked)
+                }
+                aria-label={role.is_active ? "禁用角色" : "启用角色"}
+              />
+              <span className="text-sm text-muted-foreground">
+                {role.is_active ? "启用" : "禁用"}
+              </span>
+            </div>
+          )
+        },
       },
       {
         accessorKey: "created_at",
@@ -205,7 +248,7 @@ export function RolesPage() {
         ),
       },
     ],
-    [hasPermission]
+    [hasPermission, handleToggleActive]
   )
 
   return (

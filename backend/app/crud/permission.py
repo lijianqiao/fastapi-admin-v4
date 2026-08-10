@@ -67,7 +67,7 @@ class CRUDPermission(CRUDBase[Permission]):
         if permission is None:
             return None
         for field, value in obj_data.items():
-            if field in {"name", "code", "module", "description"}:
+            if field in {"name", "code", "module", "description", "is_active"}:
                 setattr(permission, field, value)
         await db.flush()
         return permission

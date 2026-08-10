@@ -36,6 +36,7 @@ class Permission(Base, TimestampMixin):
     code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     module: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
     roles: Mapped[list["Role"]] = relationship(  # noqa: UP037

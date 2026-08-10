@@ -273,7 +273,7 @@ class CRUDUser(CRUDBase[User]):
         return list(users_result.scalars().unique().all()), total
 
     async def get_permission_codes(self, db: AsyncSession, user_id: int) -> list[str]:
-        """Return permissions granted through non-deleted roles only."""
+        """Return permissions granted through active, non-deleted roles only."""
         stmt = (
             select(Permission.code)
             .join(role_permissions, role_permissions.c.permission_id == Permission.id)
@@ -282,7 +282,9 @@ class CRUDUser(CRUDBase[User]):
             .where(
                 user_roles.c.user_id == user_id,
                 Role.is_deleted.is_(False),
+                Role.is_active.is_(True),
                 Permission.is_deleted.is_(False),
+                Permission.is_active.is_(True),
             )
             .distinct()
             .order_by(Permission.code)
@@ -306,7 +308,9 @@ class CRUDUser(CRUDBase[User]):
                 user_roles.c.user_id == user_id,
                 Permission.code == code,
                 Role.is_deleted.is_(False),
+                Role.is_active.is_(True),
                 Permission.is_deleted.is_(False),
+                Permission.is_active.is_(True),
             )
         )
 

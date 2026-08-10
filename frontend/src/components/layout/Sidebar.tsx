@@ -1,10 +1,11 @@
 /** 侧边导航栏
 
- * 桌面端支持展开/收缩；用户菜单固定在侧栏底部。
+ * 桌面端支持展开/收缩与分组大菜单；用户菜单固定在侧栏底部。
  * 移动端通过 Sheet 抽屉显示完整导航。
  */
 
-import { NavLink, useNavigate } from "react-router"
+import { useEffect, useMemo, useState } from "react"
+import { NavLink, useLocation, useNavigate } from "react-router"
 
 import {
   Dashboard02Icon,
@@ -14,9 +15,17 @@ import {
   FileEditIcon,
   UserCircleIcon,
   Logout02Icon,
+  Settings02Icon,
+  AuditIcon,
+  ArrowDown01Icon,
 } from "@/lib/icons"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,49 +56,259 @@ interface SidebarProps {
   collapsed: boolean
 }
 
-interface NavItem {
+type IconType = typeof Dashboard02Icon
+
+interface NavLeaf {
+  type: "item"
   label: string
   path: string
-  icon: typeof Dashboard02Icon
+  icon: IconType
   permission?: string
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { label: "仪表盘", path: ROUTES.DASHBOARD, icon: Dashboard02Icon },
+interface NavGroup {
+  type: "group"
+  id: string
+  label: string
+  icon: IconType
+  children: NavLeaf[]
+}
+
+type NavEntry = NavLeaf | NavGroup
+
+const NAV_ENTRIES: NavEntry[] = [
   {
-    label: "用户管理",
-    path: ROUTES.USERS,
-    icon: UserMultipleIcon,
-    permission: PERMISSIONS.USER_READ,
+    type: "item",
+    label: "仪表盘",
+    path: ROUTES.DASHBOARD,
+    icon: Dashboard02Icon,
   },
   {
-    label: "角色管理",
-    path: ROUTES.ROLES,
-    icon: Shield02Icon,
-    permission: PERMISSIONS.ROLE_READ,
+    type: "group",
+    id: "system",
+    label: "系统管理",
+    icon: Settings02Icon,
+    children: [
+      {
+        type: "item",
+        label: "用户管理",
+        path: ROUTES.USERS,
+        icon: UserMultipleIcon,
+        permission: PERMISSIONS.USER_READ,
+      },
+      {
+        type: "item",
+        label: "角色管理",
+        path: ROUTES.ROLES,
+        icon: Shield02Icon,
+        permission: PERMISSIONS.ROLE_READ,
+      },
+      {
+        type: "item",
+        label: "权限管理",
+        path: ROUTES.PERMISSIONS,
+        icon: Key02Icon,
+        permission: PERMISSIONS.PERMISSION_READ,
+      },
+      {
+        type: "item",
+        label: "个人中心",
+        path: ROUTES.PROFILE,
+        icon: UserCircleIcon,
+      },
+    ],
   },
   {
-    label: "权限管理",
-    path: ROUTES.PERMISSIONS,
-    icon: Key02Icon,
-    permission: PERMISSIONS.PERMISSION_READ,
+    type: "group",
+    id: "logs",
+    label: "日志中心",
+    icon: AuditIcon,
+    children: [
+      {
+        type: "item",
+        label: "操作日志",
+        path: ROUTES.AUDIT,
+        icon: FileEditIcon,
+        permission: PERMISSIONS.AUDIT_READ,
+      },
+    ],
   },
-  {
-    label: "操作日志",
-    path: ROUTES.AUDIT,
-    icon: FileEditIcon,
-    permission: PERMISSIONS.AUDIT_READ,
-  },
-  { label: "个人中心", path: ROUTES.PROFILE, icon: UserCircleIcon },
 ]
 
-function navLinkClassName(isActive: boolean, collapsed: boolean) {
+function navLinkClassName(
+  isActive: boolean,
+  collapsed: boolean,
+  nested = false
+) {
   return cn(
     "flex items-center rounded-lg py-2 text-sm font-medium transition-colors",
-    collapsed ? "justify-center px-2" : "gap-3 px-3",
+    collapsed ? "justify-center px-2" : nested ? "gap-3 px-3 pl-9" : "gap-3 px-3",
     isActive
       ? "bg-primary text-primary-foreground"
       : "text-muted-foreground hover:bg-muted hover:text-foreground"
+  )
+}
+
+function LeafLink({
+  item,
+  collapsed,
+  nested,
+  onNavigate,
+}: {
+  item: NavLeaf
+  collapsed: boolean
+  nested?: boolean
+  onNavigate?: () => void
+}) {
+  const Icon = item.icon
+
+  if (!collapsed) {
+    return (
+      <NavLink
+        to={item.path}
+        end={item.path === ROUTES.DASHBOARD}
+        onClick={onNavigate}
+        className={({ isActive }) =>
+          navLinkClassName(isActive, collapsed, nested)
+        }
+      >
+        <Icon className="size-4 shrink-0" />
+        <span>{item.label}</span>
+      </NavLink>
+    )
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <NavLink
+            to={item.path}
+            end={item.path === ROUTES.DASHBOARD}
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              navLinkClassName(isActive, collapsed, nested)
+            }
+          />
+        }
+      >
+        <Icon className="size-4 shrink-0" />
+        <span className="sr-only">{item.label}</span>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {item.label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function GroupNav({
+  group,
+  collapsed,
+  onNavigate,
+}: {
+  group: NavGroup
+  collapsed: boolean
+  onNavigate?: () => void
+}) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const GroupIcon = group.icon
+  const childActive = group.children.some(
+    (child) =>
+      location.pathname === child.path ||
+      location.pathname.startsWith(`${child.path}/`)
+  )
+  const [open, setOpen] = useState(childActive)
+
+  useEffect(() => {
+    if (childActive) {
+      setOpen(true)
+    }
+  }, [childActive])
+
+  if (collapsed) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              className={cn(
+                "h-auto w-full justify-center rounded-lg px-2 py-2",
+                childActive
+                  ? "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+              aria-label={group.label}
+              title={group.label}
+            />
+          }
+        >
+          <GroupIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="right"
+          align="start"
+          sideOffset={8}
+          className="w-44"
+        >
+          <DropdownMenuGroup>
+            {group.children.map((child) => {
+              const ChildIcon = child.icon
+              return (
+                <DropdownMenuItem
+                  key={child.path}
+                  onClick={() => {
+                    navigate(child.path)
+                    onNavigate?.()
+                  }}
+                >
+                  <ChildIcon />
+                  <span>{child.label}</span>
+                </DropdownMenuItem>
+              )
+            })}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger
+        render={
+          <Button
+            variant="ghost"
+            className={cn(
+              "h-auto w-full justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium",
+              childActive
+                ? "text-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          />
+        }
+      >
+        <GroupIcon data-icon="inline-start" />
+        <span className="flex-1 text-left">{group.label}</span>
+        <ArrowDown01Icon
+          data-icon="inline-end"
+          className={cn("transition-transform", open && "rotate-180")}
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-1 pt-1">
+        {group.children.map((child) => (
+          <LeafLink
+            key={child.path}
+            item={child}
+            collapsed={false}
+            nested
+            onNavigate={onNavigate}
+          />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -101,53 +320,45 @@ function NavList({
   onNavigate?: () => void
 }) {
   const { hasPermission } = usePermission()
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.permission || hasPermission(item.permission)
-  )
+
+  const entries = useMemo(() => {
+    return NAV_ENTRIES.flatMap((entry): NavEntry[] => {
+      if (entry.type === "item") {
+        if (entry.permission && !hasPermission(entry.permission)) {
+          return []
+        }
+        return [entry]
+      }
+
+      const children = entry.children.filter(
+        (child) => !child.permission || hasPermission(child.permission)
+      )
+      if (children.length === 0) {
+        return []
+      }
+      return [{ ...entry, children }]
+    })
+  }, [hasPermission])
 
   return (
     <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
-      {visibleItems.map((item) => {
-        const Icon = item.icon
-        const link = (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            onClick={onNavigate}
-            className={({ isActive }) => navLinkClassName(isActive, collapsed)}
-            title={collapsed ? item.label : undefined}
-          >
-            <Icon className="size-4 shrink-0" />
-            <span className={cn(collapsed && "sr-only")}>{item.label}</span>
-          </NavLink>
+      {entries.map((entry) =>
+        entry.type === "item" ? (
+          <LeafLink
+            key={entry.path}
+            item={entry}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
+        ) : (
+          <GroupNav
+            key={entry.id}
+            group={entry}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
         )
-
-        if (!collapsed) {
-          return link
-        }
-
-        return (
-          <Tooltip key={item.path}>
-            <TooltipTrigger
-              render={
-                <NavLink
-                  to={item.path}
-                  onClick={onNavigate}
-                  className={({ isActive }) =>
-                    navLinkClassName(isActive, collapsed)
-                  }
-                />
-              }
-            >
-              <Icon className="size-4 shrink-0" />
-              <span className="sr-only">{item.label}</span>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8}>
-              {item.label}
-            </TooltipContent>
-          </Tooltip>
-        )
-      })}
+      )}
     </nav>
   )
 }
@@ -245,10 +456,7 @@ export function Sidebar({ open, onOpenChange, collapsed }: SidebarProps) {
               权限管理系统
             </SheetTitle>
           </SheetHeader>
-          <NavList
-            collapsed={false}
-            onNavigate={() => onOpenChange(false)}
-          />
+          <NavList collapsed={false} onNavigate={() => onOpenChange(false)} />
           <UserMenu collapsed={false} />
         </SheetContent>
       </Sheet>
