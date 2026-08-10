@@ -38,6 +38,7 @@ export const PERMISSIONS = {
 /** localStorage 存储键 */
 export const STORAGE_KEYS = {
   THEME: "theme",
+  SIDEBAR_COLLAPSED: "sidebar-collapsed",
 } as const
 
 /** 默认分页配置 */

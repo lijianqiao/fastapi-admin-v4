@@ -1,49 +1,37 @@
 /** 顶部栏
 
- * 包含移动端菜单按钮、面包屑、用户下拉菜单。
+ * 包含移动端菜单、桌面端侧栏展开/收缩（位于侧栏与内容交界处），以及主题切换。
  */
 
-import { useNavigate } from "react-router"
-
 import {
-  UserCircleIcon,
-  Logout02Icon,
   Menu02Icon,
   Sun02Icon,
   Moon02Icon,
+  PanelLeftIcon,
 } from "@/lib/icons"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
-import { Separator } from "@/components/ui/separator"
-import { useAuth } from "@/hooks/use-auth"
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useTheme } from "@/components/theme-provider"
-import { ROUTES } from "@/lib/constants"
 
 interface HeaderProps {
   onMenuClick: () => void
+  collapsed: boolean
+  onCollapsedChange: (collapsed: boolean) => void
 }
 
-export function Header({ onMenuClick }: HeaderProps) {
-  const navigate = useNavigate()
-  const { user, logout } = useAuth()
+export function Header({
+  onMenuClick,
+  collapsed,
+  onCollapsedChange,
+}: HeaderProps) {
   const { theme, setTheme } = useTheme()
-
-  const initials =
-    user?.nickname?.charAt(0)?.toUpperCase() ||
-    user?.username?.charAt(0)?.toUpperCase() ||
-    "U"
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-background px-4 md:px-6">
-      {/* 移动端菜单按钮 */}
       <Button
         variant="ghost"
         size="icon"
@@ -54,9 +42,27 @@ export function Header({ onMenuClick }: HeaderProps) {
         <Menu02Icon />
       </Button>
 
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden md:inline-flex"
+              aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
+              onClick={() => onCollapsedChange(!collapsed)}
+            />
+          }
+        >
+          <PanelLeftIcon />
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={6}>
+          {collapsed ? "展开侧边栏" : "收起侧边栏"}
+        </TooltipContent>
+      </Tooltip>
+
       <div className="flex-1" />
 
-      {/* 主题切换 */}
       <Button
         variant="ghost"
         size="icon"
@@ -65,35 +71,6 @@ export function Header({ onMenuClick }: HeaderProps) {
       >
         {theme === "dark" ? <Sun02Icon /> : <Moon02Icon />}
       </Button>
-
-      <Separator orientation="vertical" />
-
-      {/* 用户菜单 */}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={<Button variant="ghost" className="gap-2 px-2" />}
-        >
-          <Avatar className="size-8">
-            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-          </Avatar>
-          <span className="hidden text-sm font-medium md:inline">
-            {user?.nickname || user?.username}
-          </span>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => navigate(ROUTES.PROFILE)}>
-              <UserCircleIcon />
-              <span>个人中心</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} className="text-destructive">
-              <Logout02Icon />
-              <span>退出登录</span>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </header>
   )
 }

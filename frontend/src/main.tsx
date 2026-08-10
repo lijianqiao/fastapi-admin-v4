@@ -6,13 +6,16 @@ import "./index.css"
 import App from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 import { Toaster } from "@/components/ui/sonner"
+import { TooltipProvider } from "@/components/ui/tooltip"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <ThemeProvider>
-        <App />
-        <Toaster richColors position="top-right" />
+        <TooltipProvider>
+          <App />
+          <Toaster richColors position="top-right" />
+        </TooltipProvider>
       </ThemeProvider>
     </BrowserRouter>
   </StrictMode>

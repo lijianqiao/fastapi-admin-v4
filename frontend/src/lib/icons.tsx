@@ -36,6 +36,7 @@ import {
   UserAdd02Icon as UserAssign02,
   InboxIcon as Inbox,
   ResetPasswordIcon as ResetPassword,
+  PanelLeftIcon as PanelLeft,
 } from "@hugeicons/core-free-icons"
 
 type IconProps = Omit<ComponentProps<typeof HugeiconsIcon>, "icon">
@@ -75,3 +76,4 @@ export const MoreHorizontalIcon = makeIcon(MoreHorizontal)
 export const UserAssign02Icon = makeIcon(UserAssign02)
 export const InboxIcon = makeIcon(Inbox)
 export const ResetPasswordIcon = makeIcon(ResetPassword)
+export const PanelLeftIcon = makeIcon(PanelLeft)
