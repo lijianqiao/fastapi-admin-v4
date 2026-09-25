@@ -7,7 +7,13 @@ import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 import dayjs from "dayjs"
 
+import {
+  AUDIT_ACTION_LABELS,
+  AuditLogDrawer,
+  auditActionLabel,
+} from "@/components/audit/AuditLogDrawer"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -21,38 +27,16 @@ import { PageHeader } from "@/components/layout/PageHeader"
 import { DataTable } from "@/components/common/DataTable"
 import { Pagination } from "@/components/common/Pagination"
 import { usePaginatedQuery } from "@/hooks/use-paginated-query"
+import { ViewIcon } from "@/lib/icons"
 import type { AuditLog } from "@/types/audit"
-
-const ACTION_LABELS: Record<string, string> = {
-  register: "注册",
-  login: "登录",
-  logout: "退出",
-  create_user: "创建用户",
-  update_user: "更新用户",
-  delete_user: "删除用户",
-  assign_roles: "分配角色",
-  create_role: "创建角色",
-  update_role: "更新角色",
-  delete_role: "删除角色",
-  assign_permissions: "分配权限",
-  create_permission: "创建权限",
-  update_permission: "更新权限",
-  delete_permission: "删除权限",
-  restore_user: "恢复用户",
-  purge_user: "永久删除用户",
-  restore_role: "恢复角色",
-  purge_role: "永久删除角色",
-  restore_permission: "恢复权限",
-  purge_permission: "永久删除权限",
-  update_profile: "更新资料",
-  change_password: "修改密码",
-  reset_password: "重置密码",
-}
 
 /** base-ui 的 Select 需要 items 才能在受控赋值时渲染选中项文案 */
 const ACTION_ITEMS = [
   { label: "全部操作", value: "all" },
-  ...Object.entries(ACTION_LABELS).map(([value, label]) => ({ label, value })),
+  ...Object.entries(AUDIT_ACTION_LABELS).map(([value, label]) => ({
+    label,
+    value,
+  })),
 ]
 
 /** 与后端 CRUDAuditLog.count_cap 一致 */
@@ -61,6 +45,7 @@ const AUDIT_COUNT_CAP = 10000
 export function AuditLogsPage() {
   const [actionFilter, setActionFilter] = useState<string>("all")
   const [searchUsername, setSearchUsername] = useState("")
+  const [previewLog, setPreviewLog] = useState<AuditLog | null>(null)
 
   const {
     items: logs,
@@ -94,7 +79,7 @@ export function AuditLogsPage() {
         header: "操作",
         cell: ({ row }) => (
           <Badge variant="outline">
-            {ACTION_LABELS[row.original.action] ?? row.original.action}
+            {auditActionLabel(row.original.action)}
           </Badge>
         ),
       },
@@ -111,7 +96,7 @@ export function AuditLogsPage() {
         accessorKey: "detail",
         header: "详情",
         cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
+          <span className="block max-w-56 truncate text-sm text-muted-foreground">
             {row.original.detail || "-"}
           </span>
         ),
@@ -128,6 +113,22 @@ export function AuditLogsPage() {
         header: "时间",
         cell: ({ row }) =>
           dayjs(row.original.created_at).format("YYYY-MM-DD HH:mm:ss"),
+      },
+      {
+        id: "preview",
+        header: "",
+        cell: ({ row }) => (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label={`预览 ${auditActionLabel(row.original.action)} 日志`}
+            onClick={() => setPreviewLog(row.original)}
+          >
+            <ViewIcon />
+            预览
+          </Button>
+        ),
       },
     ],
     []
@@ -186,6 +187,8 @@ export function AuditLogsPage() {
         onPageSizeChange={onPageSizeChange}
         maxTotal={AUDIT_COUNT_CAP}
       />
+
+      <AuditLogDrawer log={previewLog} onClose={() => setPreviewLog(null)} />
     </div>
   )
 }

@@ -46,3 +46,6 @@ logs/
 
 # ===== 其他 =====
 docs/superpowers/*
+.superpowers/*
+AGENTS.md
+CLAUDE.md
