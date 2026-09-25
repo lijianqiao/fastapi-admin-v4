@@ -4,10 +4,10 @@ from datetime import datetime
 
 from pydantic import Field
 
-from app.schemas.common import ApiModel
+from app.schemas.common import ResponseModel
 
 
-class DashboardStats(ApiModel):
+class DashboardStats(ResponseModel):
     """仪表盘统计数据。"""
 
     user_count: int = Field(default=0, description="用户总数")
@@ -16,7 +16,7 @@ class DashboardStats(ApiModel):
     active_user_count: int = Field(default=0, description="启用用户数")
 
 
-class RecentLoginItem(ApiModel):
+class RecentLoginItem(ResponseModel):
     """最近登录记录。"""
 
     id: int
@@ -27,7 +27,7 @@ class RecentLoginItem(ApiModel):
     created_at: datetime
 
 
-class DashboardData(ApiModel):
+class DashboardData(ResponseModel):
     """仪表盘完整数据。"""
 
     stats: DashboardStats

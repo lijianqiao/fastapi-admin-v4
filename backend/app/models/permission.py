@@ -45,7 +45,7 @@ class Permission(Base, TimestampMixin):
     )
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
-    roles: Mapped[list["Role"]] = relationship(  # noqa: UP037
+    roles: Mapped[list[Role]] = relationship(
         "Role",
         secondary="role_permissions",
         back_populates="permissions",

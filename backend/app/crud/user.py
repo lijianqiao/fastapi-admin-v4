@@ -1,27 +1,27 @@
 """Asynchronous user repository."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
-from sqlalchemy import Exists, exists, func, or_, select
+from sqlalchemy import Exists, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.base import ExecutableOption
 
-from app.core.errors import ConflictError
-from app.core.security import hash_password_async, verify_and_update_password
-from app.crud.base import CRUDBase, ModelData, RelatedObjectsNotFoundError, contains_pattern
+from app.crud.base import ModelData, RelatedObjectsNotFoundError, SoftDeleteCRUD, contains_pattern
 from app.models.permission import Permission
 from app.models.role import Role, role_permissions
 from app.models.user import User, user_roles
 
 
-class LastActiveSuperuserError(ConflictError):
-    """Raised when an operation would remove the final active superuser."""
-
-
-class CRUDUser(CRUDBase[User]):
+class CRUDUser(SoftDeleteCRUD[User]):
     """Data access for users and their RBAC assignments."""
 
     model = User
+    updatable_fields = frozenset({"email", "nickname", "is_active"})
+    search_columns = ("username", "email")
+
+    def load_options(self) -> Sequence[ExecutableOption]:
+        return (selectinload(User.roles.and_(Role.is_deleted.is_(False))),)
 
     async def get_by_username_any(self, db: AsyncSession, username: str) -> User | None:
         """Return matching username including a recoverable soft-deleted user."""
@@ -116,40 +116,6 @@ class CRUDUser(CRUDBase[User]):
         )
         return set(result.scalars().all())
 
-    async def authenticate(
-        self,
-        db: AsyncSession,
-        identifier: str,
-        password: str,
-    ) -> User | None:
-        """Verify credentials without blocking the event loop or leaking user existence."""
-        candidate = await self.get_by_identifier(db, identifier)
-        candidate_hash = candidate.hashed_password if candidate is not None else None
-        candidate_is_active = candidate is not None and candidate.is_active
-        # Release the read transaction and pooled connection before expensive
-        # KDF work. A successful verification is re-read under a row lock below.
-        await db.rollback()
-        verification = await verify_and_update_password(
-            password,
-            candidate_hash,
-        )
-        if candidate is None or not candidate_is_active or not verification.valid:
-            return None
-
-        user = await self.get_by_identifier_for_update(db, identifier)
-        if user is None or not user.is_active:
-            return None
-
-        if user.hashed_password != candidate_hash:
-            verification = await verify_and_update_password(password, user.hashed_password)
-            if not verification.valid:
-                return None
-
-        if verification.updated_hash is not None:
-            user.hashed_password = verification.updated_hash
-            await db.flush()
-        return user
-
     async def _get_required_roles(
         self,
         db: AsyncSession,
@@ -176,47 +142,10 @@ class CRUDUser(CRUDBase[User]):
         return [roles_by_id[role_id] for role_id in normalized_ids]
 
     async def create(self, db: AsyncSession, obj_data: ModelData) -> User:
-        """Create an unprivileged user; roles are assigned through a separate operation."""
-        data = dict(obj_data)
-        password = data.pop("password", None)
-
-        if not isinstance(password, str):
-            raise ValueError("创建用户必须提供密码")
-        data["hashed_password"] = await hash_password_async(password)
-
-        db_obj = User(**data)
-        db_obj.roles = []
-        db.add(db_obj)
-        await db.flush()
-        return db_obj
-
-    async def update(
-        self,
-        db: AsyncSession,
-        id: int,
-        obj_data: ModelData,
-    ) -> User | None:
-        """Update mutable user fields and keep any loaded roles available."""
-        deactivating = obj_data.get("is_active") is False
-        active_superuser_ids: list[int] = []
-        if deactivating:
-            active_superuser_ids = await self._lock_active_superuser_ids(db)
-
-        user = await self.get_with_roles_for_update(db, id)
-        if user is None:
-            return None
-        if (
-            deactivating
-            and user.is_superuser
-            and user.is_active
-            and not any(user_id != user.id for user_id in active_superuser_ids)
-        ):
-            raise LastActiveSuperuserError("不能停用最后一个启用的超级管理员")
-
-        mutable_fields = {"email", "nickname", "is_active"}
-        for field, value in obj_data.items():
-            if field in mutable_fields:
-                setattr(user, field, value)
+        """Create an unprivileged user from an already-hashed password."""
+        user = User(**dict(obj_data))
+        user.roles = []
+        db.add(user)
         await db.flush()
         return user
 
@@ -272,13 +201,13 @@ class CRUDUser(CRUDBase[User]):
                 .where(Role.id == role_id, Role.is_deleted.is_(False))
             )
 
-        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
-        total_result = await db.execute(count_stmt)
-        total = total_result.scalar_one()
-
-        page_stmt = stmt.order_by(User.id).offset(skip).limit(limit)
-        users_result = await db.execute(page_stmt)
-        return list(users_result.scalars().unique().all()), total
+        return await self.paginate(
+            db,
+            stmt,
+            order_by=(User.id.asc(),),
+            skip=skip,
+            limit=limit,
+        )
 
     async def get_permission_codes(self, db: AsyncSession, user_id: int) -> list[str]:
         """Return permissions granted through active, non-deleted roles only."""
@@ -338,7 +267,7 @@ class CRUDUser(CRUDBase[User]):
             return True
         return await self.has_permission(db, user.id, code)
 
-    async def _lock_active_superuser_ids(self, db: AsyncSession) -> list[int]:
+    async def lock_active_superuser_ids(self, db: AsyncSession) -> list[int]:
         """Serialize operations that can remove an active superuser."""
         stmt = (
             select(User.id)
@@ -353,86 +282,8 @@ class CRUDUser(CRUDBase[User]):
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def soft_delete(self, db: AsyncSession, id: int) -> bool:
-        """Soft-delete a user while preventing concurrent admin lockout."""
-        active_superuser_ids = await self._lock_active_superuser_ids(db)
-        user = await self.get_with_roles_for_update(db, id)
-        if user is None:
-            return False
-        if (
-            user.is_superuser
-            and user.is_active
-            and not any(user_id != user.id for user_id in active_superuser_ids)
-        ):
-            raise LastActiveSuperuserError("不能删除最后一个启用的超级管理员")
-
-        user.is_deleted = True
-        await db.flush()
-        return True
-
-    async def get_deleted_multi(
-        self,
-        db: AsyncSession,
-        search: str | None = None,
-        skip: int = 0,
-        limit: int = 10,
-    ) -> tuple[list[User], int]:
-        """Return a page of soft-deleted users for the recycle bin."""
-        stmt = (
-            select(User)
-            .where(User.is_deleted.is_(True))
-            .options(selectinload(User.roles.and_(Role.is_deleted.is_(False))))
-        )
-        if search:
-            search_pattern = contains_pattern(search)
-            stmt = stmt.where(
-                or_(
-                    User.username.ilike(search_pattern, escape="\\"),
-                    User.email.ilike(search_pattern, escape="\\"),
-                )
-            )
-
-        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
-        total = (await db.execute(count_stmt)).scalar_one()
-        page_stmt = stmt.order_by(User.updated_at.desc(), User.id.desc()).offset(skip).limit(limit)
-        users = list((await db.execute(page_stmt)).scalars().unique().all())
-        return users, total
-
-    async def restore(self, db: AsyncSession, user_id: int) -> User | None:
-        """Restore a soft-deleted user and return it with active roles loaded."""
-        stmt = (
-            select(User)
-            .where(User.id == user_id, User.is_deleted.is_(True))
-            .options(selectinload(User.roles.and_(Role.is_deleted.is_(False))))
-            .order_by(User.id)
-            .with_for_update(key_share=True)
-            .execution_options(populate_existing=True)
-        )
-        user = (await db.execute(stmt)).scalar_one_or_none()
-        if user is None:
-            return None
-        user.is_deleted = False
-        await db.flush()
-        return user
-
-    async def hard_delete(self, db: AsyncSession, user_id: int) -> bool:
-        """Permanently remove a soft-deleted user and cascaded associations."""
-        stmt = (
-            select(User)
-            .where(User.id == user_id, User.is_deleted.is_(True))
-            .order_by(User.id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-        user = (await db.execute(stmt)).scalar_one_or_none()
-        if user is None:
-            return False
-        await db.delete(user)
-        await db.flush()
-        return True
-
-    async def _lock_for_password_update(self, db: AsyncSession, user_id: int) -> User | None:
-        """Lock an active user row ahead of a password write."""
+    async def lock_active(self, db: AsyncSession, user_id: int) -> User | None:
+        """Lock an active user row with FOR NO KEY UPDATE for a caller-owned write."""
         stmt = (
             select(User)
             .where(User.id == user_id, User.is_deleted.is_(False))
@@ -442,50 +293,12 @@ class CRUDUser(CRUDBase[User]):
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def change_password(
-        self,
-        db: AsyncSession,
-        user_id: int,
-        old_password: str,
-        new_password: str,
-    ) -> bool:
-        """Verify and replace the latest password under one row lock.
-
-        Locking before verification makes two concurrent requests using the same
-        old password serialize: after the first commits, the second verifies
-        against the new hash and fails. The caller must follow up with
-        ``revoke_all_refresh_sessions``, which owns the ``token_version`` bump.
-        """
-        user = await self._lock_for_password_update(db, user_id)
-        if user is None:
-            return False
-
-        verification = await verify_and_update_password(old_password, user.hashed_password)
-        if not verification.valid:
-            return False
-
-        user.hashed_password = await hash_password_async(new_password)
-        await db.flush()
-        return True
-
-    async def reset_password(
-        self,
-        db: AsyncSession,
-        user_id: int,
-        new_password: str,
-    ) -> bool:
-        """Administrator sets a new password without verifying the old one.
-
-        The caller must follow up with ``revoke_all_refresh_sessions``, which
-        owns the ``token_version`` bump, mirroring ``change_password``.
-        """
-        user = await self._lock_for_password_update(db, user_id)
-        if user is None:
-            return False
-
-        user.hashed_password = await hash_password_async(new_password)
-        await db.flush()
-        return True
+    async def get_password_hash(self, db: AsyncSession, user_id: int) -> str | None:
+        """Read the current password hash of an active user without locking."""
+        hashed_password: str | None = await db.scalar(
+            select(User.hashed_password).where(User.id == user_id, User.is_deleted.is_(False))
+        )
+        return hashed_password
 
 
 user_crud = CRUDUser()

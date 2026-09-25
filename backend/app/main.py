@@ -1,7 +1,7 @@
 """FastAPI application factory and cross-cutting HTTP policies."""
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -9,6 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -17,7 +18,9 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import engine
-from app.core.errors import AppError, error_content
+from app.core.deps import collect_required_permissions
+from app.core.errors import AppError, error_content, is_conflict_violation
+from app.core.middleware import UnhandledErrorMiddleware
 
 
 def configure_logging() -> None:
@@ -85,7 +88,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: IntegrityError,
     ) -> JSONResponse:
-        """Convert database constraint races into a safe conflict response."""
+        """Convert uniqueness/reference races into 409; other violations are bugs."""
+        if not is_conflict_violation(exc):
+            logger.error("数据库约束错误，路径: %s", request.url.path, exc_info=exc)
+            return JSONResponse(status_code=500, content=error_content(500, "服务器内部错误"))
         logger.info("数据库约束冲突，路径: %s", request.url.path, exc_info=exc)
         return JSONResponse(
             status_code=409,
@@ -113,6 +119,29 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
 
+def _iter_api_routes(routes: Sequence[object]) -> Iterator[APIRoute]:
+    """展开路由，包含 FastAPI 0.141 惰性挂载、尚未摊平到 ``app.routes`` 的子路由。"""
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route
+            continue
+        included = getattr(route, "original_router", None)
+        nested = getattr(included, "routes", None)
+        if isinstance(nested, Sequence):
+            yield from _iter_api_routes(nested)
+
+
+def annotate_route_permissions(app: FastAPI) -> None:
+    """Expose each route's required permissions in OpenAPI as ``x-permissions``."""
+    for route in _iter_api_routes(app.routes):
+        codes = collect_required_permissions(route.dependant)
+        if codes:
+            route.openapi_extra = {
+                **(route.openapi_extra or {}),
+                "x-permissions": sorted(code.value for code in codes),
+            }
+
+
 def create_app() -> FastAPI:
     """Create a configured FastAPI application."""
     production = settings.ENVIRONMENT == "production"
@@ -126,6 +155,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # 必须最先添加：位于 CORSMiddleware 内层，未捕获异常生成的 500 才会带上 CORS 头
+    app.add_middleware(UnhandledErrorMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
@@ -139,6 +170,7 @@ def create_app() -> FastAPI:
         trusted_hosts=settings.TRUSTED_PROXY_CIDRS,
     )
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+    annotate_route_permissions(app)
 
     @app.get("/health", tags=["系统"])
     async def health_check() -> dict[str, str]:

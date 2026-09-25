@@ -19,6 +19,7 @@ from app.core.security import (
     hash_refresh_token,
     issue_refresh_token,
     refresh_token_hash_matches,
+    verify_and_update_password,
 )
 from app.crud.user import user_crud
 from app.models.refresh_session import RefreshSession
@@ -169,8 +170,30 @@ registration_rate_limiter = LoginRateLimiter(
 
 
 async def authenticate_user(db: AsyncSession, identifier: str, password: str) -> User | None:
-    """使用用户仓储的唯一认证实现验证凭据。"""
-    return await user_crud.authenticate(db, identifier, password)
+    """Verify credentials without holding a connection during KDF work or leaking user existence."""
+    candidate = await user_crud.get_by_identifier(db, identifier)
+    candidate_hash = candidate.hashed_password if candidate is not None else None
+    candidate_is_active = candidate is not None and candidate.is_active
+    # Release the read transaction and pooled connection before expensive
+    # KDF work. A successful verification is re-read under a row lock below.
+    await db.rollback()
+    verification = await verify_and_update_password(password, candidate_hash)
+    if candidate is None or not candidate_is_active or not verification.valid:
+        return None
+
+    user = await user_crud.get_by_identifier_for_update(db, identifier)
+    if user is None or not user.is_active:
+        return None
+
+    if user.hashed_password != candidate_hash:
+        verification = await verify_and_update_password(password, user.hashed_password)
+        if not verification.valid:
+            return None
+
+    if verification.updated_hash is not None:
+        user.hashed_password = verification.updated_hash
+        await db.flush()
+    return user
 
 
 async def create_login_session(db: AsyncSession, user: User) -> SessionTokens:
@@ -325,28 +348,6 @@ async def rotate_refresh_session(
         refresh_token=refresh.token,
         family_id=refresh.family_id,
     )
-
-
-async def is_session_family_active(
-    db: AsyncSession,
-    *,
-    user_id: int,
-    family_id: str,
-    token_version: int,
-) -> bool:
-    """验证 access token 对应的会话 family 仍有有效 refresh session。"""
-    stmt = (
-        select(RefreshSessionFamily.id)
-        .where(
-            RefreshSessionFamily.id == family_id,
-            RefreshSessionFamily.user_id == user_id,
-            RefreshSessionFamily.token_version == token_version,
-            RefreshSessionFamily.revoked_at.is_(None),
-            RefreshSessionFamily.expires_at > datetime.now(UTC),
-        )
-        .limit(1)
-    )
-    return (await db.execute(stmt)).scalar_one_or_none() is not None
 
 
 def _active_session_statement(

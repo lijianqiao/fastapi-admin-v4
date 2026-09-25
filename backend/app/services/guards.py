@@ -9,6 +9,7 @@ from app.crud.permission import permission_crud
 from app.crud.role import role_crud
 from app.crud.user import user_crud
 from app.models.permission import Permission
+from app.models.role import Role
 from app.models.user import User
 
 
@@ -53,3 +54,24 @@ async def ensure_permission_grant_allowed(
     if not await permission_crud.is_granted_through_live_role(db, permission.id):
         return
     await ensure_grantable(db, actor, {permission.code})
+
+
+async def guard_user_recycle(_db: AsyncSession, actor: User, target: User) -> None:
+    """Restoring or purging a superuser account is superuser-only."""
+    ensure_can_manage(actor, target)
+
+
+async def guard_role_restore(db: AsyncSession, actor: User, role: Role) -> None:
+    """Restoring a role in use re-grants its permissions."""
+    await ensure_role_grant_allowed(db, actor, role.id)
+
+
+async def guard_permission_restore(db: AsyncSession, actor: User, permission: Permission) -> None:
+    """Restoring a permission in use re-grants it."""
+    await ensure_permission_grant_allowed(db, actor, permission)
+
+
+async def guard_permission_purge(_db: AsyncSession, _actor: User, permission: Permission) -> None:
+    """System permissions are owned by the code registry."""
+    if permission.is_system:
+        raise ForbiddenError("系统权限不可永久删除")

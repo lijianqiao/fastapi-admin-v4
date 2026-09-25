@@ -75,7 +75,7 @@ class User(Base, TimestampMixin):
         server_default="0",
     )
 
-    roles: Mapped[list["Role"]] = relationship(  # noqa: UP037
+    roles: Mapped[list[Role]] = relationship(
         "Role",
         secondary=user_roles,
         back_populates="users",

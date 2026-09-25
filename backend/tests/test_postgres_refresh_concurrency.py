@@ -11,6 +11,7 @@ import selectors
 import sys
 from collections.abc import Coroutine
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Literal
 from unittest.mock import patch
 from uuid import uuid4
@@ -30,16 +31,52 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.security import decode_token, hash_password_async, verify_and_update_password
-from app.crud.user import LastActiveSuperuserError, user_crud
+from app.crud.user import user_crud
 from app.models.refresh_session_family import RefreshSessionFamily
 from app.models.user import User
+from app.schemas.user import UserUpdate
+from app.services import users as users_service
 from app.services.auth import (
     RefreshSessionCompromisedError,
+    authenticate_user,
     create_login_session,
-    is_session_family_active,
     revoke_all_refresh_sessions,
     rotate_refresh_session,
 )
+from app.services.users import LastActiveSuperuserError
+
+# 并发删除/停用超管时的操作者：一个不在库中的超级管理员，只用于通过权限守卫
+RACE_ACTOR = User(
+    id=-1,
+    username="race-actor",
+    email="race-actor@example.com",
+    hashed_password="!",
+    is_superuser=True,
+    is_active=True,
+)
+
+
+async def is_session_family_active(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    family_id: str,
+    token_version: int,
+) -> bool:
+    """Whether the access-token family still has a usable refresh session."""
+    stmt = (
+        select(RefreshSessionFamily.id)
+        .where(
+            RefreshSessionFamily.id == family_id,
+            RefreshSessionFamily.user_id == user_id,
+            RefreshSessionFamily.token_version == token_version,
+            RefreshSessionFamily.revoked_at.is_(None),
+            RefreshSessionFamily.expires_at > datetime.now(UTC),
+        )
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none() is not None
+
 
 POSTGRES_DATABASE_URL = os.getenv("TEST_POSTGRES_DATABASE_URL")
 if not POSTGRES_DATABASE_URL:
@@ -298,13 +335,9 @@ async def _change_password_while_login_waits(
             login_waiting_for_lock.wait(),
             timeout=READY_TIMEOUT_SECONDS,
         )
-        changed = await user_crud.change_password(
-            db,
-            user_id,
-            old_password,
-            new_password,
-        )
-        assert changed
+        user = await db.get(User, user_id)
+        assert user is not None
+        user.hashed_password = await hash_password_async(new_password)
         await db.commit()
         return backend_pid
 
@@ -320,7 +353,7 @@ async def _login_while_password_changes(
     await asyncio.wait_for(row_locked.wait(), timeout=READY_TIMEOUT_SECONDS)
     async with session_factory() as db:
         _connection, backend_pid = await _prepare_worker_connection(db)
-        authenticated = await user_crud.authenticate(db, username, old_password)
+        authenticated = await authenticate_user(db, username, old_password)
         await db.commit()
         return authenticated, backend_pid
 
@@ -456,10 +489,14 @@ async def _mutate_superuser(
         await asyncio.wait_for(barrier.wait(), timeout=READY_TIMEOUT_SECONDS)
         try:
             if operation == "deactivate":
-                updated = await user_crud.update(db, user_id, {"is_active": False})
-                assert updated is not None
+                await users_service.update_user(
+                    db,
+                    RACE_ACTOR,
+                    user_id,
+                    UserUpdate(is_active=False),
+                )
             else:
-                assert await user_crud.soft_delete(db, user_id)
+                await users_service.delete_user(db, RACE_ACTOR, user_id)
         except LastActiveSuperuserError:
             await db.rollback()
             return SuperuserMutationResult("rejected", backend_pid)
@@ -584,7 +621,7 @@ async def _login_and_create_family(
 ) -> tuple[str, int, int]:
     async with session_factory() as db:
         _connection, backend_pid = await _prepare_worker_connection(db)
-        user = await user_crud.authenticate(db, username, password)
+        user = await authenticate_user(db, username, password)
         assert user is not None
         login_locked_user.set()
         await asyncio.wait_for(
@@ -609,7 +646,7 @@ async def _change_password_and_revoke_families(
     async with session_factory() as db:
         _connection, backend_pid = await _prepare_worker_connection(db)
         password_change_started.set()
-        changed = await user_crud.change_password(
+        changed = await users_service.change_password(
             db,
             user_id,
             old_password,

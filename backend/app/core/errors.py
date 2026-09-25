@@ -2,6 +2,8 @@
 
 from typing import Any, ClassVar
 
+from sqlalchemy.exc import IntegrityError
+
 
 def error_content(status_code: int, message: str, data: Any = None) -> dict[str, Any]:
     """Build the public error envelope used by every error response."""
@@ -42,3 +44,19 @@ class UnprocessableError(AppError):
 
 class ServiceUnavailableError(AppError):
     status_code = 503
+
+
+# unique_violation / foreign_key_violation（PostgreSQL SQLSTATE）
+_CONFLICT_SQLSTATES = frozenset({"23505", "23503"})
+# SQLite 扩展错误名（测试库）
+_CONFLICT_SQLITE_ERRORS = frozenset(
+    {"SQLITE_CONSTRAINT_UNIQUE", "SQLITE_CONSTRAINT_PRIMARYKEY", "SQLITE_CONSTRAINT_FOREIGNKEY"}
+)
+
+
+def is_conflict_violation(exc: IntegrityError) -> bool:
+    """Tell uniqueness/reference conflicts apart from other constraint failures."""
+    original = exc.orig
+    if getattr(original, "sqlstate", None) in _CONFLICT_SQLSTATES:
+        return True
+    return getattr(original, "sqlite_errorname", None) in _CONFLICT_SQLITE_ERRORS

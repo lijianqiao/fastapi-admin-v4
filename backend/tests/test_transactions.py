@@ -6,7 +6,7 @@ from pytest import MonkeyPatch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1 import permissions as permission_routes
+from app.core import deps as deps_module
 from app.models.permission import Permission
 from tests.assertions import assert_error
 
@@ -24,7 +24,7 @@ async def test_business_write_rolls_back_when_audit_write_fails(
     async def fail_audit(*args: object, **kwargs: object) -> None:
         raise RuntimeError("injected audit failure")
 
-    monkeypatch.setattr(permission_routes, "log_audit", fail_audit)
+    monkeypatch.setattr(deps_module, "log_audit", fail_audit)
     response = await client.post(
         "/api/v1/permissions",
         json={

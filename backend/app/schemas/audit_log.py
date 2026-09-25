@@ -2,12 +2,12 @@
 
 from datetime import datetime
 
-from pydantic import ConfigDict, Field
+from pydantic import Field
 
-from app.schemas.common import ApiModel
+from app.schemas.common import ApiModel, ResponseModel
 
 
-class AuditLogResponse(ApiModel):
+class AuditLogResponse(ResponseModel):
     """审计日志响应。"""
 
     id: int
@@ -18,8 +18,6 @@ class AuditLogResponse(ApiModel):
     detail: str
     ip: str
     created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class AuditLogCreate(ApiModel):

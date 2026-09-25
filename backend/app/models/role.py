@@ -62,7 +62,7 @@ class Role(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
-    permissions: Mapped[list["Permission"]] = relationship(  # noqa: UP037
+    permissions: Mapped[list[Permission]] = relationship(
         "Permission",
         secondary=role_permissions,
         back_populates="roles",
@@ -71,7 +71,7 @@ class Role(Base, TimestampMixin):
         passive_deletes=True,
     )
 
-    users: Mapped[list["User"]] = relationship(  # noqa: UP037
+    users: Mapped[list[User]] = relationship(
         "User",
         secondary="user_roles",
         back_populates="roles",

@@ -2,32 +2,21 @@
 
 from datetime import datetime
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import Field
 
-from app.schemas.common import ApiModel
+from app.schemas.common import ApiModel, PartialUpdate, PermissionCode, ResponseModel
 
 
 class PermissionCreate(ApiModel):
     """Create a permission."""
 
     name: str = Field(min_length=1, max_length=100)
-    code: str = Field(
-        min_length=3,
-        max_length=100,
-        pattern=r"^[a-z][a-z0-9_-]*:[a-z][a-z0-9_-]*$",
-    )
+    code: PermissionCode
     module: str = Field(default="", max_length=50)
     description: str = Field(default="", max_length=500)
 
-    @field_validator("code", mode="before")
-    @classmethod
-    def normalize_code(cls, value: object) -> object:
-        if not isinstance(value, str):
-            return value
-        return value.strip().casefold()
 
-
-class PermissionUpdate(ApiModel):
+class PermissionUpdate(PartialUpdate):
     """Partially update a permission; the code is immutable once created."""
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
@@ -35,18 +24,8 @@ class PermissionUpdate(ApiModel):
     description: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
 
-    @model_validator(mode="after")
-    def reject_empty_update(self) -> PermissionUpdate:
-        null_fields = {name for name in self.model_fields_set if getattr(self, name) is None}
-        if null_fields:
-            names = ", ".join(sorted(null_fields))
-            raise ValueError(f"字段不能为 null: {names}")
-        if not self.model_fields_set:
-            raise ValueError("至少提供一个要更新的字段")
-        return self
 
-
-class PermissionResponse(ApiModel):
+class PermissionResponse(ResponseModel):
     """Public permission representation."""
 
     id: int
@@ -58,5 +37,3 @@ class PermissionResponse(ApiModel):
     is_system: bool
     created_at: datetime
     updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)

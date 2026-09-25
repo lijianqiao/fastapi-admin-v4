@@ -1,121 +1,51 @@
-"""Asynchronous permission-management endpoints."""
+"""Permission-management endpoints: HTTP adaptation only."""
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
 
-from app.core.database import get_db
-from app.core.deps import get_client_ip, require_permission
-from app.core.errors import ForbiddenError
-from app.core.permissions import SYSTEM_PERMISSION_CODES, Perm
+from fastapi import APIRouter, Depends, Path, Query, status
+
+from app.api.v1.recycle_bin import build_recycle_bin_router
+from app.core.deps import Audit, DbSession, PageParams, audited, page_query, require_permission
+from app.core.permissions import Perm
 from app.crud.permission import permission_crud
 from app.models.user import User
-from app.schemas.common import PaginatedData, ResponseEnvelope, paginated_response, success_response
+from app.schemas.common import PaginatedData, ResponseEnvelope, success_response
 from app.schemas.permission import PermissionCreate, PermissionResponse, PermissionUpdate
-from app.services.guards import ensure_permission_grant_allowed
-from app.utils.audit import log_audit
+from app.services import permissions as permissions_service
+from app.services.guards import guard_permission_purge, guard_permission_restore
 
 router = APIRouter()
+router.include_router(
+    build_recycle_bin_router(
+        crud=permission_crud,
+        list_schema=PermissionResponse,
+        detail_schema=PermissionResponse,
+        permission=Perm.PERMISSION_DELETE,
+        resource="permission",
+        label="权限",
+        describe=lambda permission: permission.code,
+        before_restore=guard_permission_restore,
+        before_purge=guard_permission_purge,
+    )
+)
 
+PermissionId = Annotated[int, Path(gt=0)]
 type PermissionListData = PaginatedData[PermissionResponse] | dict[str, list[PermissionResponse]]
 
 
-@router.get(
-    "/deleted",
-    response_model=ResponseEnvelope[PaginatedData[PermissionResponse]],
-)
-async def list_deleted_permissions(
-    page: int = Query(default=1, ge=1, le=100_000),
-    page_size: int = Query(default=10, ge=1, le=100),
-    search: str | None = Query(default=None, min_length=1, max_length=100),
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission(Perm.PERMISSION_DELETE)),
-) -> ResponseEnvelope[PaginatedData[PermissionResponse]]:
-    """List soft-deleted permissions in the recycle bin."""
-    permissions, total = await permission_crud.get_deleted_multi(
-        db,
-        search=search,
-        skip=(page - 1) * page_size,
-        limit=page_size,
-    )
-    items = [PermissionResponse.model_validate(permission) for permission in permissions]
-    return paginated_response(items, total, page, page_size)
-
-
-@router.post(
-    "/{permission_id}/restore",
-    response_model=ResponseEnvelope[PermissionResponse],
-)
-async def restore_permission(
-    request: Request,
-    permission_id: int = Path(gt=0),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission(Perm.PERMISSION_DELETE)),
-) -> ResponseEnvelope[PermissionResponse]:
-    """Restore a soft-deleted permission from the recycle bin."""
-    target = await permission_crud.get_including_deleted(db, permission_id)
-    if target is not None and target.is_deleted:
-        await ensure_permission_grant_allowed(db, current_user, target)
-    restored = await permission_crud.restore(db, permission_id)
-    if restored is None:
-        raise HTTPException(status_code=404, detail="回收站中不存在该权限")
-    await log_audit(
-        db,
-        user_id=current_user.id,
-        action="restore_permission",
-        target=f"permission:{permission_id}",
-        detail=f"恢复权限: {restored.code}",
-        ip=get_client_ip(request),
-    )
-    await db.commit()
-    return success_response(PermissionResponse.model_validate(restored), message="恢复成功")
-
-
-@router.delete(
-    "/{permission_id}/purge",
-    response_model=ResponseEnvelope[None],
-)
-async def purge_permission(
-    request: Request,
-    permission_id: int = Path(gt=0),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission(Perm.PERMISSION_DELETE)),
-) -> ResponseEnvelope[None]:
-    """Permanently delete a soft-deleted permission."""
-    target = await permission_crud.get_including_deleted(db, permission_id)
-    if target is not None and target.is_system:
-        raise ForbiddenError("系统权限不可永久删除")
-    if not await permission_crud.hard_delete(db, permission_id):
-        raise HTTPException(status_code=404, detail="回收站中不存在该权限")
-    await log_audit(
-        db,
-        user_id=current_user.id,
-        action="purge_permission",
-        target=f"permission:{permission_id}",
-        detail="永久删除权限",
-        ip=get_client_ip(request),
-    )
-    await db.commit()
-    return success_response(None, message="已永久删除")
-
-
-@router.get(
-    "",
-    response_model=ResponseEnvelope[PermissionListData],
-)
+@router.get("")
 async def list_permissions(
-    page: int = Query(default=1, ge=1, le=100_000),
-    page_size: int = Query(default=100, ge=1, le=200),
-    search: str | None = Query(default=None, min_length=1, max_length=100),
-    module: str | None = Query(default=None, min_length=1, max_length=50),
-    grouped: bool = Query(default=False, description="按模块分组返回"),
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission(Perm.PERMISSION_READ)),
+    db: DbSession,
+    _: Annotated[User, Depends(require_permission(Perm.PERMISSION_READ))],
+    page: Annotated[PageParams, Depends(page_query(default_size=100, max_size=200))],
+    module: Annotated[str | None, Query(min_length=1, max_length=50)] = None,
+    grouped: Annotated[bool, Query(description="按模块分组返回")] = False,
 ) -> ResponseEnvelope[PermissionListData]:
     """Return either a paginated list or a deterministic module grouping."""
     if grouped:
         grouped_permissions = await permission_crud.get_all_grouped(
             db,
-            search=search,
+            search=page.search,
             module=module,
         )
         result: PermissionListData = {
@@ -126,48 +56,32 @@ async def list_permissions(
 
     permissions, total = await permission_crud.get_multi_filtered(
         db,
-        search=search,
+        search=page.search,
         module=module,
-        skip=(page - 1) * page_size,
-        limit=page_size,
+        skip=page.skip,
+        limit=page.page_size,
     )
-    items = [PermissionResponse.model_validate(permission) for permission in permissions]
     result = PaginatedData[PermissionResponse](
-        items=items,
+        items=[PermissionResponse.model_validate(permission) for permission in permissions],
         total=total,
-        page=page,
-        page_size=page_size,
+        page=page.page,
+        page_size=page.page_size,
     )
     return success_response(result)
 
 
-@router.post(
-    "",
-    response_model=ResponseEnvelope[PermissionResponse],
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_permission(
     permission_in: PermissionCreate,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission(Perm.PERMISSION_CREATE)),
+    audit: Annotated[Audit, Depends(audited(Perm.PERMISSION_CREATE))],
 ) -> ResponseEnvelope[PermissionResponse]:
-    """Create a unique permission code."""
-    if permission_in.code in SYSTEM_PERMISSION_CODES:
-        raise ForbiddenError("该权限码由系统保留，请使用其他权限码")
-    if await permission_crud.get_by_code_any(db, permission_in.code):
-        raise HTTPException(status_code=409, detail="权限码已被占用（包括已删除权限）")
-
-    permission = await permission_crud.create(db, permission_in.model_dump())
-    await log_audit(
-        db,
-        user_id=current_user.id,
-        action="create_permission",
-        target=f"permission:{permission.id}",
-        detail=f"创建权限: {permission.code}",
-        ip=get_client_ip(request),
+    """Create a unique custom permission code."""
+    permission = await permissions_service.create_permission(audit.db, permission_in)
+    await audit.commit(
+        "create_permission",
+        f"permission:{permission.id}",
+        f"创建权限: {permission.code}",
     )
-    await db.commit()
     return success_response(
         PermissionResponse.model_validate(permission),
         message="创建成功",
@@ -175,69 +89,34 @@ async def create_permission(
     )
 
 
-@router.patch(
-    "/{permission_id}",
-    response_model=ResponseEnvelope[PermissionResponse],
-)
-@router.put(
-    "/{permission_id}",
-    response_model=ResponseEnvelope[PermissionResponse],
-    deprecated=True,
-)
+@router.patch("/{permission_id}")
+@router.put("/{permission_id}", deprecated=True)
 async def update_permission(
+    permission_id: PermissionId,
     permission_in: PermissionUpdate,
-    request: Request,
-    permission_id: int = Path(gt=0),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission(Perm.PERMISSION_UPDATE)),
+    audit: Annotated[Audit, Depends(audited(Perm.PERMISSION_UPDATE))],
 ) -> ResponseEnvelope[PermissionResponse]:
     """Partially update a permission under a row lock."""
-    if permission_in.is_active is True:
-        existing_permission = await permission_crud.get(db, permission_id)
-        if existing_permission is not None and not existing_permission.is_active:
-            await ensure_permission_grant_allowed(db, current_user, existing_permission)
-    updated = await permission_crud.update(
-        db,
+    permission = await permissions_service.update_permission(
+        audit.db,
+        audit.actor,
         permission_id,
-        permission_in.model_dump(exclude_unset=True),
+        permission_in,
     )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="权限不存在")
-    await log_audit(
-        db,
-        user_id=current_user.id,
-        action="update_permission",
-        target=f"permission:{permission_id}",
-        detail=f"更新权限: {updated.code}",
-        ip=get_client_ip(request),
+    await audit.commit(
+        "update_permission",
+        f"permission:{permission_id}",
+        f"更新权限: {permission.code}",
     )
-    await db.commit()
-    return success_response(PermissionResponse.model_validate(updated), message="更新成功")
+    return success_response(PermissionResponse.model_validate(permission), message="更新成功")
 
 
-@router.delete(
-    "/{permission_id}",
-    response_model=ResponseEnvelope[None],
-)
+@router.delete("/{permission_id}")
 async def delete_permission(
-    request: Request,
-    permission_id: int = Path(gt=0),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission(Perm.PERMISSION_DELETE)),
+    permission_id: PermissionId,
+    audit: Annotated[Audit, Depends(audited(Perm.PERMISSION_DELETE))],
 ) -> ResponseEnvelope[None]:
-    """Soft-delete a permission under the same lock used by assignment."""
-    permission = await permission_crud.get(db, permission_id)
-    if permission is not None and permission.is_system:
-        raise ForbiddenError("系统权限不可删除")
-    if not await permission_crud.soft_delete(db, permission_id):
-        raise HTTPException(status_code=404, detail="权限不存在")
-    await log_audit(
-        db,
-        user_id=current_user.id,
-        action="delete_permission",
-        target=f"permission:{permission_id}",
-        detail="删除权限",
-        ip=get_client_ip(request),
-    )
-    await db.commit()
+    """Soft-delete a custom permission under the same lock used by assignment."""
+    await permissions_service.delete_permission(audit.db, permission_id)
+    await audit.commit("delete_permission", f"permission:{permission_id}", "删除权限")
     return success_response(None, message="删除成功")

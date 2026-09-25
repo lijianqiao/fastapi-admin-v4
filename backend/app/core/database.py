@@ -61,3 +61,14 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         except BaseException:
             await session.rollback()
             raise
+
+
+async def release_connection(db: AsyncSession) -> None:
+    """End a read-only transaction so the pooled connection is free during CPU work.
+
+    ``expire_on_commit=False`` keeps already-loaded objects usable. Call this only
+    before password hashing and only while nothing is pending in the session.
+    """
+    if db.new or db.dirty or db.deleted:
+        raise RuntimeError("release_connection 只能在没有未提交写入时调用")
+    await db.commit()

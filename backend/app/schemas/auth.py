@@ -2,37 +2,17 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.schemas.common import ApiModel
+from app.schemas.common import ApiModel, NormalizedEmail, Password, ResponseModel, Username
 
 
 class UserRegister(ApiModel):
     """用户注册请求。"""
 
-    username: str = Field(
-        min_length=3,
-        max_length=50,
-        pattern=r"^[a-z0-9][a-z0-9_.-]+$",
-        description="用户名",
-    )
-    email: EmailStr = Field(description="邮箱地址")
-    password: str = Field(min_length=8, max_length=128, description="密码")
-
-    @field_validator("username", mode="before")
-    @classmethod
-    def normalize_username(cls, value: object) -> object:
-        if not isinstance(value, str):
-            return value
-        normalized = value.strip().casefold()
-        if not normalized:
-            raise ValueError("用户名不能为空")
-        return normalized
-
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        return str(value).casefold()
+    username: Username = Field(description="用户名")
+    email: NormalizedEmail = Field(description="邮箱地址")
+    password: Password = Field(description="密码")
 
 
 class UserLogin(ApiModel):
@@ -50,7 +30,7 @@ class UserLogin(ApiModel):
         return normalized.casefold()
 
 
-class TokenResponse(ApiModel):
+class TokenResponse(ResponseModel):
     """access token 响应。"""
 
     access_token: str = Field(description="访问令牌")

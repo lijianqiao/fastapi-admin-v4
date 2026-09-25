@@ -1,14 +1,15 @@
 """Asynchronous role repository."""
 
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, with_expression
+from sqlalchemy.sql.base import ExecutableOption
 from sqlalchemy.sql.selectable import ScalarSelect
 
 from app.core.errors import ConflictError
-from app.crud.base import CRUDBase, ModelData, RelatedObjectsNotFoundError, contains_pattern
+from app.crud.base import ModelData, RelatedObjectsNotFoundError, SoftDeleteCRUD, contains_pattern
 from app.models.permission import Permission
 from app.models.role import Role, role_permissions
 from app.models.user import User, user_roles
@@ -22,10 +23,18 @@ class RoleInUseError(ConflictError):
         super().__init__(f"角色仍关联 {user_count} 个用户", data={"user_count": user_count})
 
 
-class CRUDRole(CRUDBase[Role]):
+class CRUDRole(SoftDeleteCRUD[Role]):
     """Data access for roles and permission assignments."""
 
     model = Role
+    updatable_fields = frozenset({"name", "description", "is_active"})
+    search_columns = ("name",)
+
+    def load_options(self) -> Sequence[ExecutableOption]:
+        return (
+            selectinload(Role.permissions.and_(Permission.is_deleted.is_(False))),
+            with_expression(Role._user_count, self._active_user_count_expression()),
+        )
 
     @staticmethod
     def _active_user_count_expression() -> ScalarSelect[int]:
@@ -118,22 +127,6 @@ class CRUDRole(CRUDBase[Role]):
         await db.flush()
         return role
 
-    async def update(
-        self,
-        db: AsyncSession,
-        id: int,
-        obj_data: ModelData,
-    ) -> Role | None:
-        """Update mutable role fields while preserving eager response state."""
-        role = await self.get_with_permissions_for_update(db, id)
-        if role is None:
-            return None
-        for field, value in obj_data.items():
-            if field in {"name", "description", "is_active"}:
-                setattr(role, field, value)
-        await db.flush()
-        return role
-
     async def assign_permissions(
         self,
         db: AsyncSession,
@@ -182,74 +175,6 @@ class CRUDRole(CRUDBase[Role]):
         result = await db.execute(stmt)
         return result.scalar_one()
 
-    async def soft_delete_if_unassigned(self, db: AsyncSession, role_id: int) -> bool:
-        """Lock a role and delete it only when no live user still references it."""
-        role = await self.get_with_permissions_for_update(db, role_id)
-        if role is None:
-            return False
-
-        user_count = await self.get_user_count(db, role_id)
-        if user_count:
-            raise RoleInUseError(user_count)
-
-        role.is_deleted = True
-        await db.flush()
-        return True
-
-    async def get_deleted_multi(
-        self,
-        db: AsyncSession,
-        search: str | None = None,
-        skip: int = 0,
-        limit: int = 10,
-    ) -> tuple[list[Role], int]:
-        """Return a page of soft-deleted roles for the recycle bin."""
-        stmt = select(Role).where(Role.is_deleted.is_(True))
-        if search:
-            stmt = stmt.where(Role.name.ilike(contains_pattern(search), escape="\\"))
-
-        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
-        total = (await db.execute(count_stmt)).scalar_one()
-        page_stmt = stmt.order_by(Role.updated_at.desc(), Role.id.desc()).offset(skip).limit(limit)
-        roles = list((await db.execute(page_stmt)).scalars().all())
-        return roles, total
-
-    async def restore(self, db: AsyncSession, role_id: int) -> Role | None:
-        """Restore a soft-deleted role."""
-        stmt = (
-            select(Role)
-            .where(Role.id == role_id, Role.is_deleted.is_(True))
-            .options(
-                selectinload(Role.permissions.and_(Permission.is_deleted.is_(False))),
-                with_expression(Role._user_count, self._active_user_count_expression()),
-            )
-            .order_by(Role.id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-        role = (await db.execute(stmt)).scalar_one_or_none()
-        if role is None:
-            return None
-        role.is_deleted = False
-        await db.flush()
-        return role
-
-    async def hard_delete(self, db: AsyncSession, role_id: int) -> bool:
-        """Permanently remove a soft-deleted role."""
-        stmt = (
-            select(Role)
-            .where(Role.id == role_id, Role.is_deleted.is_(True))
-            .order_by(Role.id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-        role = (await db.execute(stmt)).scalar_one_or_none()
-        if role is None:
-            return False
-        await db.delete(role)
-        await db.flush()
-        return True
-
     async def get_multi_filtered(
         self,
         db: AsyncSession,
@@ -269,13 +194,13 @@ class CRUDRole(CRUDBase[Role]):
         if search:
             stmt = stmt.where(Role.name.ilike(contains_pattern(search), escape="\\"))
 
-        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
-        total_result = await db.execute(count_stmt)
-        total = total_result.scalar_one()
-
-        page_stmt = stmt.order_by(Role.id).offset(skip).limit(limit)
-        roles_result = await db.execute(page_stmt)
-        return list(roles_result.scalars().unique().all()), total
+        return await self.paginate(
+            db,
+            stmt,
+            order_by=(Role.id.asc(),),
+            skip=skip,
+            limit=limit,
+        )
 
 
 role_crud = CRUDRole()

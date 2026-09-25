@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.cookies import clear_refresh_cookie, set_refresh_cookie
 from app.core.database import get_db
 from app.core.deps import get_client_ip, get_refresh_token_from_request
+from app.core.errors import error_content
 from app.core.security import decode_token, hash_password_async
 from app.crud.user import user_crud
 from app.schemas.auth import TokenResponse, UserLogin, UserRegister
@@ -45,7 +46,7 @@ def _error_response(
     response = JSONResponse(
         status_code=status_code,
         headers=headers,
-        content={"code": status_code, "data": None, "message": message},
+        content=error_content(status_code, message),
     )
     response.headers["Cache-Control"] = "no-store"
     if clear_cookie:
@@ -122,13 +123,14 @@ async def register(
         await hash_password_async(user_in.password)
         return _error_response(status.HTTP_409_CONFLICT, "用户名或邮箱已被使用")
 
+    hashed_password = await hash_password_async(user_in.password)
     try:
         user = await user_crud.create(
             db,
             {
                 "username": user_in.username,
                 "email": str(user_in.email),
-                "password": user_in.password,
+                "hashed_password": hashed_password,
                 "nickname": user_in.username,
             },
         )

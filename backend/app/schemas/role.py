@@ -2,9 +2,9 @@
 
 from datetime import datetime
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, field_validator
 
-from app.schemas.common import ApiModel, PositiveId, unique_ids
+from app.schemas.common import ApiModel, PartialUpdate, PositiveId, ResponseModel, unique_ids
 from app.schemas.permission import PermissionResponse
 
 
@@ -15,25 +15,15 @@ class RoleCreate(ApiModel):
     description: str = Field(default="", max_length=500)
 
 
-class RoleUpdate(ApiModel):
+class RoleUpdate(PartialUpdate):
     """Partially update a role."""
 
     name: str | None = Field(default=None, min_length=1, max_length=50)
     description: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
 
-    @model_validator(mode="after")
-    def reject_empty_update(self) -> RoleUpdate:
-        null_fields = {name for name in self.model_fields_set if getattr(self, name) is None}
-        if null_fields:
-            names = ", ".join(sorted(null_fields))
-            raise ValueError(f"字段不能为 null: {names}")
-        if not self.model_fields_set:
-            raise ValueError("至少提供一个要更新的字段")
-        return self
 
-
-class RoleResponse(ApiModel):
+class RoleResponse(ResponseModel):
     """Public role representation."""
 
     id: int
@@ -42,8 +32,6 @@ class RoleResponse(ApiModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class RoleWithPermissions(RoleResponse):
