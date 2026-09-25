@@ -35,8 +35,10 @@ export function getAccessToken(): string | null {
   return accessToken
 }
 
-/** 用 refresh_token cookie 换取新的 access_token */
-export async function refreshAccessToken(): Promise<string> {
+const REFRESH_LOCK_NAME = "fastapi-admin:auth-refresh"
+
+/** 用 refresh_token cookie 换取新的 access_token（不做跨标签页协调） */
+async function requestNewAccessToken(): Promise<string> {
   const response = await axios.post(
     `${BASE_URL}/auth/refresh`,
     {},
@@ -48,6 +50,20 @@ export async function refreshAccessToken(): Promise<string> {
   }
   setAccessToken(newToken)
   return newToken
+}
+
+/** 刷新 access_token
+ *
+ * refresh_token 是一次性的：两个标签页带着同一个 Cookie 并发刷新时，后到者会被服务端
+ * 判定为重放，并撤销整个会话族，所有标签页都会被登出。这里用 Web Locks 让所有标签页
+ * 的刷新串行执行：后拿到锁的标签页发请求时，浏览器已经存下前一个标签页轮换出的新 Cookie。
+ * 不支持 Web Locks 的环境（非安全上下文等）退化为直接请求。
+ */
+export function refreshAccessToken(): Promise<string> {
+  if ("locks" in navigator) {
+    return navigator.locks.request(REFRESH_LOCK_NAME, requestNewAccessToken)
+  }
+  return requestNewAccessToken()
 }
 
 /** 从 axios 错误中取出后端统一错误信封的 message，取不到时返回 fallback */

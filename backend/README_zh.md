@@ -81,8 +81,12 @@ uv run python main.py
 | `LOG_LEVEL` | 根日志级别（默认 `info`） |
 | `SQL_ECHO` | 仅排查 SQL 时设为 `true` |
 | `REGISTRATION_ENABLED` | 是否开放自助注册（默认关闭） |
+| `REFRESH_SESSION_ABSOLUTE_LIFETIME_DAYS` | 会话族最长存活天数（默认 30） |
+| `LEGACY_BCRYPT_ENABLED` | 旧 bcrypt 哈希全部迁移后设为 `false` |
 
-## 权限码（种子）
+## 权限注册表
+
+权限码的唯一来源是 `app/core/permissions.py` 中的 `Perm`。`init_db.py` 会按它同步 `permissions` 表，并把这些权限标记为系统权限（`code` 不可改、不可删）。
 
 | 模块 | 权限码 |
 | --- | --- |
@@ -90,6 +94,15 @@ uv run python main.py
 | 角色 | `role:read` `role:create` `role:update` `role:delete` `role:assign` |
 | 权限 | `permission:read` `permission:create` `permission:update` `permission:delete` |
 | 审计 | `audit:read` |
+
+**新增一个受保护接口：**
+
+1. 在 `Perm` 中增加成员，并在 `PERMISSION_META` 中补全名称、模块、描述；
+2. 路由上使用 `Depends(require_permission(Perm.X))`，写操作使用 `Depends(audited(Perm.X))`；
+3. 在前端 `src/lib/constants.ts` 的 `PERMISSIONS` 中加入同一权限码；
+4. 部署后执行 `uv run python init_db.py` 同步权限表。
+
+`tests/test_permission_registry.py` 会检查注册表、路由实际使用的权限与前端常量三者一致。
 
 ## 质量检查
 

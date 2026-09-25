@@ -8,6 +8,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from time import monotonic
+from typing import Protocol, runtime_checkable
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,6 +68,29 @@ class AuthorizedUser:
 
     user: User
     has_permission: bool
+
+
+@runtime_checkable
+class AttemptLimiter(Protocol):
+    """Throttle for authentication attempts.
+
+    The in-process ``LoginRateLimiter`` is correct for a single worker. To run
+    several workers or instances, implement this protocol on a shared store
+    (for example Redis) and assign it to ``login_rate_limiter`` /
+    ``registration_rate_limiter`` below; no caller needs to change.
+    """
+
+    async def hit(self, client_ip: str, identifier: str) -> int | None:
+        """Record one attempt; return seconds to wait when throttled, else None."""
+        ...
+
+    async def clear(self, client_ip: str, identifier: str) -> None:
+        """Forget the pair/account windows after a successful attempt."""
+        ...
+
+    async def reset(self) -> None:
+        """Drop all state (used to isolate tests)."""
+        ...
 
 
 class LoginRateLimiter:
@@ -171,11 +195,11 @@ class LoginRateLimiter:
             self._entries.pop(key, None)
 
 
-login_rate_limiter = LoginRateLimiter(
+login_rate_limiter: AttemptLimiter = LoginRateLimiter(
     attempts=settings.LOGIN_RATE_LIMIT_ATTEMPTS,
     window_seconds=settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
 )
-registration_rate_limiter = LoginRateLimiter(
+registration_rate_limiter: AttemptLimiter = LoginRateLimiter(
     attempts=settings.REGISTRATION_RATE_LIMIT_ATTEMPTS,
     window_seconds=settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
 )

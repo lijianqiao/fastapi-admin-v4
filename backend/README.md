@@ -81,8 +81,12 @@ Useful flags in `.env`:
 | `LOG_LEVEL` | Root log level (`info` default) |
 | `SQL_ECHO` | Set `true` only while debugging SQL |
 | `REGISTRATION_ENABLED` | Public self-registration (off by default) |
+| `REFRESH_SESSION_ABSOLUTE_LIFETIME_DAYS` | Maximum lifetime of a session family in days (default 30) |
+| `LEGACY_BCRYPT_ENABLED` | Set to `false` once every legacy bcrypt hash has been migrated |
 
-## Permission codes (seeded)
+## Permission registry
+
+`Perm` in `app/core/permissions.py` is the single source of permission codes. `init_db.py` syncs the `permissions` table from it and marks those rows as system permissions (code immutable, not deletable).
 
 | Module | Codes |
 | --- | --- |
@@ -90,6 +94,15 @@ Useful flags in `.env`:
 | Roles | `role:read` `role:create` `role:update` `role:delete` `role:assign` |
 | Permissions | `permission:read` `permission:create` `permission:update` `permission:delete` |
 | Audit | `audit:read` |
+
+**Adding a protected endpoint:**
+
+1. Add a member to `Perm` and its name/module/description to `PERMISSION_META`;
+2. Guard the route with `Depends(require_permission(Perm.X))`, or `Depends(audited(Perm.X))` for writes;
+3. Add the same code to `PERMISSIONS` in the frontend `src/lib/constants.ts`;
+4. Run `uv run python init_db.py` after deploying to sync the table.
+
+`tests/test_permission_registry.py` checks that the registry, the permissions actually used by routes, and the frontend constants agree.
 
 ## Quality
 

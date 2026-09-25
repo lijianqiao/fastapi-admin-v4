@@ -10,7 +10,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -18,9 +19,14 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import engine
-from app.core.deps import collect_required_permissions
+from app.core.deps import DbSession, collect_required_permissions
 from app.core.errors import AppError, error_content, is_conflict_violation
 from app.core.middleware import UnhandledErrorMiddleware
+from app.core.request_context import (
+    REQUEST_ID_HEADER,
+    RequestIdMiddleware,
+    install_request_id_log_field,
+)
 
 
 def configure_logging() -> None:
@@ -29,9 +35,10 @@ def configure_logging() -> None:
     根日志遵循 ``LOG_LEVEL``；SQLAlchemy 引擎/连接池默认仅输出 WARNING 及以上，
     需要 SQL 排障时设置 ``SQL_ECHO=true``。
     """
+    install_request_id_log_field()
     logging.basicConfig(
         level=logging.getLevelName(settings.LOG_LEVEL.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(name)s - %(levelname)s - [%(request_id)s] - %(message)s",
     )
     sql_level = logging.INFO if settings.SQL_ECHO else logging.WARNING
     logging.getLogger("sqlalchemy.engine").setLevel(sql_level)
@@ -163,12 +170,15 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"],
         allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+        expose_headers=[REQUEST_ID_HEADER],
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
     app.add_middleware(
         ProxyHeadersMiddleware,
         trusted_hosts=settings.TRUSTED_PROXY_CIDRS,
     )
+    # 最后添加 = 最外层：被 TrustedHost 拒绝的请求和 500 响应同样带上请求 ID
+    app.add_middleware(RequestIdMiddleware)
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
     annotate_route_permissions(app)
 
@@ -176,6 +186,16 @@ def create_app() -> FastAPI:
     async def health_check() -> dict[str, str]:
         """Return a process-level liveness signal without blocking a worker thread."""
         return {"status": "ok"}
+
+    @app.get("/health/ready", tags=["系统"])
+    async def readiness_check(db: DbSession) -> JSONResponse:
+        """Report whether the database answers; for load-balancer readiness probes."""
+        try:
+            await db.execute(text("SELECT 1"))
+        except SQLAlchemyError:
+            logger.warning("就绪检查失败：数据库不可用", exc_info=True)
+            return JSONResponse(status_code=503, content=error_content(503, "数据库不可用"))
+        return JSONResponse(content={"status": "ready"})
 
     register_exception_handlers(app)
     return app

@@ -310,12 +310,12 @@ User（用户）
 
 Role（角色）
 ├── id, name, description
-├── is_deleted, created_at, updated_at
+├── is_active, is_deleted, created_at, updated_at
 └── M:N → Permission
 
 Permission（权限）
 ├── id, name, code（如 user:read）, module, description
-├── is_deleted, created_at, updated_at
+├── is_active, is_system, is_deleted, created_at, updated_at
 └── M:N ← Role
 
 UserRole（用户-角色关联）
@@ -325,11 +325,11 @@ RolePermission（角色-权限关联）
 └── role_id, permission_id, created_at
 
 AuditLog（审计日志，P1）
-└── id, user_id, action, target, detail, ip, created_at
+└── id, user_id（无外键）, actor_username（快照）, action, target, detail, ip, created_at
     （仅追加表：运行时角色只有 SELECT/INSERT，保留策略由 DBA 按分区管理）
 
 RefreshSessionFamily（refresh 会话族 — 撤销真源）
-├── id, user_id, token_version, expires_at
+├── id, user_id, token_version, expires_at, absolute_expires_at
 └── revoked_at, revoked_reason, created_at, last_used_at
 
 RefreshSession（refresh token 轮换历史）
@@ -350,23 +350,35 @@ RefreshSession（refresh token 轮换历史）
 | GET | `/api/v1/users` | `user:read` | 用户列表（分页/搜索/筛选） |
 | POST | `/api/v1/users` | `user:create` | 新增用户 |
 | GET | `/api/v1/users/{id}` | `user:read` | 用户详情 |
-| PUT | `/api/v1/users/{id}` | `user:update` | 更新用户 |
+| PATCH | `/api/v1/users/{id}` | `user:update` | 更新用户（PUT 为已弃用别名） |
 | DELETE | `/api/v1/users/{id}` | `user:delete` | 删除用户（软删除） |
 | PUT | `/api/v1/users/{id}/roles` | `user:assign` | 分配用户角色 |
 | GET | `/api/v1/roles` | `role:read` | 角色列表 |
 | POST | `/api/v1/roles` | `role:create` | 新增角色 |
-| PUT | `/api/v1/roles/{id}` | `role:update` | 更新角色 |
+| PATCH | `/api/v1/roles/{id}` | `role:update` | 更新角色（PUT 为已弃用别名） |
 | DELETE | `/api/v1/roles/{id}` | `role:delete` | 删除角色 |
 | PUT | `/api/v1/roles/{id}/permissions` | `role:assign` | 分配角色权限 |
 | GET | `/api/v1/permissions` | `permission:read` | 权限列表 |
 | POST | `/api/v1/permissions` | `permission:create` | 新增权限 |
-| PUT | `/api/v1/permissions/{id}` | `permission:update` | 更新权限 |
+| PATCH | `/api/v1/permissions/{id}` | `permission:update` | 更新权限，`code` 不可修改（PUT 为已弃用别名） |
 | DELETE | `/api/v1/permissions/{id}` | `permission:delete` | 删除权限 |
 | GET | `/api/v1/me` | 已认证 | 个人信息（含 `permissions`：经启用角色授予的权限码集合，前端据此做界面级权限控制） |
 | PUT | `/api/v1/me` | 已认证 | 修改个人信息 |
 | PUT | `/api/v1/me/password` | 已认证 | 修改密码 |
 | GET | `/api/v1/dashboard` | 已认证 | 仪表盘统计 |
 | GET | `/api/v1/audit-logs` | `audit:read` | 审计日志（P1） |
+| PUT | `/api/v1/users/{id}/password` | `user:reset_password` | 管理员重置他人密码 |
+| GET | `/api/v1/users/deleted` | `user:delete` | 用户回收站 |
+| POST | `/api/v1/users/{id}/restore` | `user:delete` | 恢复用户 |
+| DELETE | `/api/v1/users/{id}/purge` | `user:delete` | 永久删除用户 |
+| GET | `/api/v1/roles/{id}` | `role:read` | 角色详情（含权限） |
+| GET | `/api/v1/roles/deleted` | `role:delete` | 角色回收站（恢复/永久删除同上） |
+| GET | `/api/v1/permissions/{id}` | `permission:read` | 权限详情 |
+| GET | `/api/v1/permissions/tree` | `permission:read` | 按模块分组的权限树 |
+| GET | `/api/v1/permissions/deleted` | `permission:delete` | 权限回收站（系统权限不可永久删除） |
+| GET | `/health/ready` | 公开 | 数据库就绪探针 |
+
+> **委派规则：** 非超级管理员不能修改超级管理员账户，不能修改自己的角色，新授予的权限必须是自己当前有效权限的子集（详见 ARCHITECTURE 1.4）。
 
 ---
 

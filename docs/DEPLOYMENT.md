@@ -127,6 +127,13 @@ Alembic 迁移链以 PostgreSQL 为唯一目标；测试中的 SQLite 仅通过 
 uv run alembic -x allow-destructive=true downgrade <revision>
 ```
 
+**v1.2 迁移注意事项：**
+
+- `f3b5d7a9c206` 会为全部审计行回填 `actor_username`（一次全表 UPDATE），并删除审计表到 `users` 的外键。审计表较大时，请安排在维护窗口执行。
+- `a4c6e8b0d307` 与 `c6e8a0d2f509` 使用 `CREATE/DROP INDEX CONCURRENTLY`，不阻塞写入。前者依赖 `pg_trgm`。
+- `b5d7f9c1e408` 为现有会话族回填 `absolute_expires_at = GREATEST(created_at + 30 天, expires_at)`，部署时不会让任何人掉线。
+- `init_db.py` 会把注册表中的系统权限补齐并标记为 `is_system`；被误删的系统权限会被恢复。每次发布新增权限后都要重新执行一次。
+
 **创建初始超级管理员：**
 
 在一次性安全环境中设置 `INIT_SUPERUSER_USERNAME`、`INIT_SUPERUSER_EMAIL`、
@@ -164,6 +171,10 @@ uv run python main.py
 Windows 必须通过 `main.py` 启动，以使用与异步 psycopg 兼容的 Selector 事件循环。
 
 单实例保持一个异步 worker，使应用内账户/IP 限流全局一致。需要多进程或多实例时，必须先在共享 API 网关/Redis 层配置等价认证限流。
+
+应用内限流器实现了 `app.services.auth.AttemptLimiter` 协议。多 worker 或多实例部署时，可以基于共享存储（如 Redis）实现该协议，并替换 `login_rate_limiter` / `registration_rate_limiter`，调用方无需改动。
+
+`/auth/login`、`/auth/refresh`、`/auth/logout`、`/auth/register` 会校验 `Origin` / `Referer` / `Sec-Fetch-Site`，只接受来自 `BACKEND_CORS_ORIGINS` 的浏览器请求。脚本、CLI 或服务间调用无法通过这些接口登录；如有需要，应另建 API Token 或服务账号机制，不要放宽来源校验。
 
 **定时清理 refresh 历史（建议每小时）：**
 
@@ -307,6 +318,12 @@ sudo systemctl start fastapi-admin
    curl https://your-domain.com/health
    ```
 
+1a. **就绪检查（负载均衡探针使用）：**
+   ```bash
+   curl https://your-domain.com/health/ready
+   ```
+   数据库可用时返回 `{"status": "ready"}`；不可用时返回 503。每个响应都带 `X-Request-ID` 头，排查问题时可以用它在日志中检索。
+
 2. **Swagger 文档：**
    仅非生产环境提供 `/docs`；生产环境默认关闭 Swagger、ReDoc 和 OpenAPI JSON。
 
@@ -332,6 +349,7 @@ sudo systemctl start fastapi-admin
 | `REFRESH_SESSION_REPLAY_GRACE_DAYS` | 过期 token 历史额外保留天数 | `1` |
 | `REFRESH_SESSION_HISTORY_RETENTION_DAYS` | 过期会话族历史保留天数 | `30` |
 | `REFRESH_SESSION_CLEANUP_BATCH_SIZE` | 清理任务单批最大行数 | `1000` |
+| `REFRESH_SESSION_ABSOLUTE_LIFETIME_DAYS` | 会话族最长存活天数（不得小于 `REFRESH_TOKEN_EXPIRE_DAYS`） | `30` |
 | `DB_POOL_SIZE` | 每进程数据库连接池大小 | `5` |
 | `DB_MAX_OVERFLOW` | 每进程连接池最大溢出 | `5` |
 | `BACKEND_CORS_ORIGINS` | CORS 白名单（逗号分隔） | `http://localhost:5173,http://localhost:3000` |
@@ -341,6 +359,7 @@ sudo systemctl start fastapi-admin
 | `REGISTRATION_ENABLED` | 是否开启自助注册 | `false` |
 | `PASSWORD_HASH_MAX_CONCURRENCY` | 每进程密码哈希最大并发 | `4` |
 | `PASSWORD_HASH_QUEUE_TIMEOUT_SECONDS` | 密码哈希排队超时（秒） | `5` |
+| `LEGACY_BCRYPT_ENABLED` | 是否兼容旧 bcrypt 哈希；确认 `SELECT count(*) FROM users WHERE hashed_password LIKE '$2%'` 为 0 后可设为 `false` | `true` |
 | `DEBUG` | 调试模式 | `false` |
 
 ### 前端环境变量

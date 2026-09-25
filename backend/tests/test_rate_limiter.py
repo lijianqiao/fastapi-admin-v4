@@ -46,3 +46,14 @@ async def test_successful_login_clears_account_and_pair_windows() -> None:
     await limiter.clear("192.0.2.5", "alice")
 
     assert await limiter.hit("192.0.2.5", "alice") is None
+
+
+async def test_default_limiters_satisfy_the_protocol() -> None:
+    from app.services.auth import (
+        AttemptLimiter,
+        login_rate_limiter,
+        registration_rate_limiter,
+    )
+
+    assert isinstance(login_rate_limiter, AttemptLimiter)
+    assert isinstance(registration_rate_limiter, AttemptLimiter)
