@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Path, status
 
 from app.api.v1.recycle_bin import build_recycle_bin_router
 from app.core.deps import Audit, DbSession, PageQuery, audited, require_permission
+from app.core.errors import NotFoundError
 from app.core.permissions import Perm
 from app.crud.role import role_crud
 from app.models.user import User
@@ -13,6 +14,7 @@ from app.schemas.common import PaginatedData, ResponseEnvelope, paginated_respon
 from app.schemas.role import (
     AssignPermissionsRequest,
     RoleCreate,
+    RoleListItem,
     RoleResponse,
     RoleUpdate,
     RoleWithPermissions,
@@ -42,16 +44,29 @@ async def list_roles(
     page: PageQuery,
     db: DbSession,
     _: Annotated[User, Depends(require_permission(Perm.ROLE_READ))],
-) -> ResponseEnvelope[PaginatedData[RoleWithPermissions]]:
-    """Return roles with permissions and user counts without N+1 queries."""
+) -> ResponseEnvelope[PaginatedData[RoleListItem]]:
+    """Return roles with permission and user counts; details come from GET /{role_id}."""
     roles, total = await role_crud.get_multi_filtered(
         db,
         search=page.search,
         skip=page.skip,
         limit=page.page_size,
     )
-    items = [RoleWithPermissions.model_validate(role) for role in roles]
+    items = [RoleListItem.model_validate(role) for role in roles]
     return paginated_response(items, total, page.page, page.page_size)
+
+
+@router.get("/{role_id}")
+async def get_role(
+    role_id: RoleId,
+    db: DbSession,
+    _: Annotated[User, Depends(require_permission(Perm.ROLE_READ))],
+) -> ResponseEnvelope[RoleWithPermissions]:
+    """Return one active role with its live permissions."""
+    role = await role_crud.get_with_permissions(db, role_id)
+    if role is None:
+        raise NotFoundError("角色不存在")
+    return success_response(RoleWithPermissions.model_validate(role))
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

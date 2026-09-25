@@ -24,6 +24,7 @@ class AuditLogCreate(ApiModel):
     """审计日志创建（内部使用）。"""
 
     user_id: int | None = None
+    actor_username: str | None = Field(default=None, max_length=50)
     action: str = Field(min_length=1, max_length=50)
     target: str = Field(default="", max_length=255)
     detail: str = Field(default="", max_length=4000)

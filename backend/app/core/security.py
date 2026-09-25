@@ -30,13 +30,15 @@ PASSWORD_HASH_SEMAPHORE = asyncio.Semaphore(settings.PASSWORD_HASH_MAX_CONCURREN
 
 
 @lru_cache(maxsize=1)
-def _dummy_hashes() -> tuple[str, str]:
-    """Build the timing-equalization hashes on first use, not at import time.
+def _dummy_argon2_hash() -> str:
+    """Build the Argon2 timing-equalization hash on first use, not at import time."""
+    return ARGON2_HASH.hash(DUMMY_PASSWORD)
 
-    Both KDFs together cost far more than a module import should, and only the
-    credential paths ever need them.
-    """
-    return ARGON2_HASH.hash(DUMMY_PASSWORD), BCRYPT_HASH.hash(DUMMY_PASSWORD)
+
+@lru_cache(maxsize=1)
+def _dummy_bcrypt_hash() -> str:
+    """Build the bcrypt timing-equalization hash on first use, not at import time."""
+    return BCRYPT_HASH.hash(DUMMY_PASSWORD)
 
 
 class PasswordHashOverloadedError(ServiceUnavailableError):
@@ -100,11 +102,11 @@ async def _run_password_work[**P, R](
     return await asyncio.shield(work)
 
 
-def _burn_both_dummy_hashes() -> None:
-    """Spend the cost of both supported algorithms for unknown/invalid hashes."""
-    dummy_argon2_hash, dummy_bcrypt_hash = _dummy_hashes()
-    ARGON2_HASH.verify(DUMMY_PASSWORD, dummy_argon2_hash)
-    BCRYPT_HASH.verify(DUMMY_PASSWORD, dummy_bcrypt_hash)
+def _burn_dummy_hashes() -> None:
+    """Spend the cost of every enabled algorithm for unknown/invalid hashes."""
+    ARGON2_HASH.verify(DUMMY_PASSWORD, _dummy_argon2_hash())
+    if settings.LEGACY_BCRYPT_ENABLED:
+        BCRYPT_HASH.verify(DUMMY_PASSWORD, _dummy_bcrypt_hash())
 
 
 def _verify_and_update_password(
@@ -112,10 +114,13 @@ def _verify_and_update_password(
     hashed_password: str | None,
 ) -> PasswordVerification:
     if hashed_password is None:
-        _burn_both_dummy_hashes()
+        _burn_dummy_hashes()
         return PasswordVerification(valid=False)
 
     if hashed_password.startswith(("$2a$", "$2b$", "$2x$", "$2y$")):
+        if not settings.LEGACY_BCRYPT_ENABLED:
+            _burn_dummy_hashes()
+            return PasswordVerification(valid=False)
         try:
             # bcrypt <=4 silently truncated at 72 bytes. Reproduce that legacy
             # behavior once so long-password accounts can log in and migrate.
@@ -124,27 +129,28 @@ def _verify_and_update_password(
                 hashed_password.encode("ascii"),
             )
         except (UnicodeEncodeError, ValueError):
-            _burn_both_dummy_hashes()
+            _burn_dummy_hashes()
             return PasswordVerification(valid=False)
 
         if valid:
             return PasswordVerification(valid=True, updated_hash=ARGON2_HASH.hash(password))
-        ARGON2_HASH.verify(DUMMY_PASSWORD, _dummy_hashes()[0])
+        ARGON2_HASH.verify(DUMMY_PASSWORD, _dummy_argon2_hash())
         return PasswordVerification(valid=False)
 
     if not hashed_password.startswith("$argon2"):
-        _burn_both_dummy_hashes()
+        _burn_dummy_hashes()
         return PasswordVerification(valid=False)
 
     try:
         valid, updated_hash = ARGON2_HASH.verify_and_update(password, hashed_password)
     except (UnknownHashError, ValueError):
-        _burn_both_dummy_hashes()
+        _burn_dummy_hashes()
         return PasswordVerification(valid=False)
 
-    # Every valid Argon2 path also pays a bcrypt cost. Together with the
-    # mirrored bcrypt branch, this keeps account/hash types hard to time.
-    BCRYPT_HASH.verify(DUMMY_PASSWORD, _dummy_hashes()[1])
+    # While legacy bcrypt is enabled every valid Argon2 path also pays a bcrypt
+    # cost, so account and hash types stay hard to tell apart by timing.
+    if settings.LEGACY_BCRYPT_ENABLED:
+        BCRYPT_HASH.verify(DUMMY_PASSWORD, _dummy_bcrypt_hash())
     return PasswordVerification(valid=valid, updated_hash=updated_hash)
 
 
@@ -206,11 +212,14 @@ def issue_refresh_token(
     token_version: int = 0,
     *,
     family_id: str | None = None,
+    not_after: datetime | None = None,
 ) -> IssuedRefreshToken:
-    """签发带唯一 jti 和会话 family 的 refresh token。"""
+    """签发带唯一 jti 和会话 family 的 refresh token；过期时间不超过 ``not_after``。"""
     issued_family_id = family_id or uuid4().hex
     jti = uuid4().hex
     expires_at = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    if not_after is not None:
+        expires_at = min(expires_at, not_after)
     claims = _base_claims(
         subject,
         "refresh",

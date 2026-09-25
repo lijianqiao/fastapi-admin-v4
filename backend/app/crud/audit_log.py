@@ -1,14 +1,13 @@
 """Asynchronous audit log repository."""
 
 from datetime import datetime
-from typing import TypedDict
+from typing import ClassVar, TypedDict
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.base import CRUDBase, contains_pattern
 from app.models.audit_log import AuditLog
-from app.models.user import User
 
 
 class AuditLogItem(TypedDict):
@@ -36,6 +35,9 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
 
     model = AuditLog
 
+    # 分页总数只数到这里；超过时返回 count_cap + 1，由前端显示"N+"，并拒绝更深的页
+    count_cap: ClassVar[int] = 10_000
+
     async def get_multi_filtered(
         self,
         db: AsyncSession,
@@ -45,47 +47,37 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
         skip: int = 0,
         limit: int = 20,
     ) -> tuple[list[AuditLogItem], int]:
-        """Return a stable audit page with the actor's current username."""
+        """Return a stable audit page using the actor snapshot taken at write time."""
         filters = []
         if user_id is not None:
             filters.append(AuditLog.user_id == user_id)
         if username:
             filters.append(
-                User.username.ilike(contains_pattern(username), escape="\\")
+                AuditLog.actor_username.ilike(contains_pattern(username), escape="\\")
             )
         if action:
             filters.append(AuditLog.action == action)
+
+        capped = select(AuditLog.id).where(*filters).limit(self.count_cap + 1).subquery()
+        total = (await db.execute(select(func.count()).select_from(capped))).scalar_one()
 
         stmt = (
             select(
                 AuditLog.id,
                 AuditLog.user_id,
-                User.username.label("username"),
+                AuditLog.actor_username.label("username"),
                 AuditLog.action,
                 AuditLog.target,
                 AuditLog.detail,
                 AuditLog.ip,
                 AuditLog.created_at,
             )
-            .outerjoin(User, AuditLog.user_id == User.id)
             .where(*filters)
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+            .offset(skip)
+            .limit(limit)
         )
-
-        # Username filter needs the join for counting; otherwise count the base table.
-        if username:
-            count_stmt = (
-                select(func.count())
-                .select_from(AuditLog)
-                .outerjoin(User, AuditLog.user_id == User.id)
-                .where(*filters)
-            )
-        else:
-            count_stmt = select(func.count()).select_from(AuditLog).where(*filters)
-        total_result = await db.execute(count_stmt)
-        total = total_result.scalar_one()
-
-        page_stmt = stmt.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
-        rows_result = await db.execute(page_stmt.offset(skip).limit(limit))
+        rows_result = await db.execute(stmt)
         items: list[AuditLogItem] = [
             {
                 "id": row.id,
@@ -111,12 +103,11 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
             select(
                 AuditLog.id,
                 AuditLog.user_id,
-                User.username.label("username"),
+                AuditLog.actor_username.label("username"),
                 AuditLog.action,
                 AuditLog.ip,
                 AuditLog.created_at,
             )
-            .outerjoin(User, AuditLog.user_id == User.id)
             .where(AuditLog.action == "login")
             .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
             .limit(limit)

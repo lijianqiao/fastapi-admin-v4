@@ -49,6 +49,7 @@ TRIGRAM_INDEX_NAMES = {
     "ix_roles_name_trgm",
     "ix_users_email_trgm",
     "ix_users_username_trgm",
+    "ix_audit_logs_actor_username_trgm",
 }
 
 

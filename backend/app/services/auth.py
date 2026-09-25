@@ -6,7 +6,7 @@ import hmac
 import math
 from collections import deque
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from time import monotonic
 
 from sqlalchemy import select, update
@@ -35,9 +35,21 @@ class RefreshTokenError(Exception):
 class RefreshSessionCompromisedError(RefreshTokenError):
     """检测到 refresh token 重放；调用方必须提交 family 撤销。"""
 
-    def __init__(self, message: str, *, user_id: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        user_id: int | None = None,
+        username: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.user_id = user_id
+        self.username = username
+
+
+def _username_for(user: User, user_id: int | None) -> str | None:
+    """Only attribute a username when the locked user is the account being logged."""
+    return user.username if user.id == user_id else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,12 +219,20 @@ async def create_login_session(db: AsyncSession, user: User) -> SessionTokens:
     ):
         raise RefreshTokenError("用户状态已变化，无法创建登录会话")
     user = locked_user
-    refresh = issue_refresh_token(str(user.id), user.token_version)
+    absolute_expires_at = datetime.now(UTC) + timedelta(
+        days=settings.REFRESH_SESSION_ABSOLUTE_LIFETIME_DAYS
+    )
+    refresh = issue_refresh_token(
+        str(user.id),
+        user.token_version,
+        not_after=absolute_expires_at,
+    )
     family = RefreshSessionFamily(
         id=refresh.family_id,
         user_id=user.id,
         token_version=user.token_version,
         expires_at=refresh.expires_at,
+        absolute_expires_at=absolute_expires_at,
     )
     db.add(family)
     # The models intentionally have no lazy relationship. Flush the FK parent
@@ -265,6 +285,7 @@ async def rotate_refresh_session(
         raise RefreshSessionCompromisedError(
             "检测到 refresh token family 重放",
             user_id=family.user_id,
+            username=_username_for(user, family.user_id),
         )
     if _as_utc(family.expires_at) <= now:
         _revoke_locked_family(family, now=now, reason="expired")
@@ -272,6 +293,16 @@ async def rotate_refresh_session(
         raise RefreshSessionCompromisedError(
             "refresh session family 已过期",
             user_id=family.user_id,
+            username=_username_for(user, family.user_id),
+        )
+    absolute_expires_at = _as_utc(family.absolute_expires_at)
+    if absolute_expires_at <= now:
+        _revoke_locked_family(family, now=now, reason="expired")
+        await db.flush()
+        raise RefreshSessionCompromisedError(
+            "refresh session family 已达到最长有效期",
+            user_id=family.user_id,
+            username=_username_for(user, family.user_id),
         )
 
     session_stmt = select(RefreshSession).where(RefreshSession.jti == claims.jti).with_for_update()
@@ -282,6 +313,7 @@ async def rotate_refresh_session(
         raise RefreshSessionCompromisedError(
             "refresh session 不存在",
             user_id=family.user_id,
+            username=_username_for(user, family.user_id),
         )
 
     metadata_matches = (
@@ -296,6 +328,7 @@ async def rotate_refresh_session(
         raise RefreshSessionCompromisedError(
             "检测到 refresh token 重放",
             user_id=session.user_id,
+            username=_username_for(user, session.user_id),
         )
 
     expires_at = _as_utc(session.expires_at)
@@ -307,6 +340,7 @@ async def rotate_refresh_session(
         raise RefreshSessionCompromisedError(
             "refresh session 已过期",
             user_id=session.user_id,
+            username=_username_for(user, session.user_id),
         )
 
     if user.is_deleted or not user.is_active or user.token_version != claims.ver:
@@ -315,12 +349,14 @@ async def rotate_refresh_session(
         raise RefreshSessionCompromisedError(
             "用户会话已失效",
             user_id=session.user_id,
+            username=_username_for(user, session.user_id),
         )
 
     refresh = issue_refresh_token(
         str(user.id),
         user.token_version,
         family_id=session.family_id,
+        not_after=absolute_expires_at,
     )
     session.revoked_at = now
     session.revoked_reason = "rotated"
@@ -421,8 +457,8 @@ async def revoke_refresh_session(
     claims: TokenPayload,
     *,
     reason: str = "logout",
-) -> int | None:
-    """验证 refresh token 后撤销其 family；无匹配会话时保持幂等。"""
+) -> User | None:
+    """验证 refresh token 后撤销其 family，返回被撤销会话的用户；无匹配会话时保持幂等。"""
     if claims.type != "refresh":
         return None
 
@@ -442,6 +478,7 @@ async def revoke_refresh_session(
         raise RefreshSessionCompromisedError(
             "logout refresh session 不存在",
             user_id=family.user_id,
+            username=_username_for(user, family.user_id),
         )
     if (
         session.user_id != claims.user_id
@@ -455,11 +492,12 @@ async def revoke_refresh_session(
         raise RefreshSessionCompromisedError(
             "logout refresh token 元数据不匹配",
             user_id=family.user_id,
+            username=_username_for(user, family.user_id),
         )
 
     _revoke_locked_family(family, now=datetime.now(UTC), reason=reason)
     await db.flush()
-    return session.user_id
+    return user
 
 
 async def revoke_all_refresh_sessions(

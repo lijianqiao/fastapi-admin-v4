@@ -60,7 +60,7 @@ class Role(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     permissions: Mapped[list[Permission]] = relationship(
         "Permission",
@@ -87,6 +87,13 @@ class Role(Base, TimestampMixin):
     def user_count(self) -> int:
         """Return the loaded aggregate, or zero for a newly-created role."""
         return self._user_count or 0
+
+    _permission_count: Mapped[int | None] = query_expression(literal(0))
+
+    @property
+    def permission_count(self) -> int:
+        """Return the loaded aggregate, or zero for a newly-created role."""
+        return self._permission_count or 0
 
     def __repr__(self) -> str:
         return f"<Role(id={self.id}, name={self.name!r})>"

@@ -137,6 +137,7 @@ async def init_superuser() -> bool:
             await log_audit(
                 db,
                 user_id=user.id,
+                username=user.username,
                 action="bootstrap_superuser",
                 target=f"user:{user.id}",
                 detail="创建首个超级管理员",

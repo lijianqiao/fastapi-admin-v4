@@ -1,11 +1,15 @@
 """Authentication and token lifecycle regression tests."""
 
+from datetime import UTC, datetime, timedelta
+
 import bcrypt
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.security import decode_token
 from app.models.refresh_session import RefreshSession
 from app.models.refresh_session_family import RefreshSessionFamily
 from app.models.user import User
@@ -355,3 +359,76 @@ async def test_login_rate_limit_returns_http_429(client: AsyncClient) -> None:
     assert all(response.status_code == 401 for response in responses[:5])
     assert_error(responses[5], 429)
     assert int(responses[5].headers["Retry-After"]) >= 1
+
+
+def _aware(value: datetime) -> datetime:
+    """SQLite returns naive datetimes for timezone-aware columns."""
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+async def _login_family(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_user: User,
+) -> RefreshSessionFamily:
+    response = await client.post(
+        "/api/v1/auth/login",
+        data={"username": test_user.username, "password": "testpassword123"},
+    )
+    assert response.status_code == 200, response.text
+    return (
+        await db_session.scalars(
+            select(RefreshSessionFamily).where(RefreshSessionFamily.user_id == test_user.id)
+        )
+    ).one()
+
+
+async def test_login_sets_absolute_session_lifetime(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_user: User,
+) -> None:
+    before = datetime.now(UTC)
+
+    family = await _login_family(client, db_session, test_user)
+
+    absolute = _aware(family.absolute_expires_at)
+    lifetime = timedelta(days=settings.REFRESH_SESSION_ABSOLUTE_LIFETIME_DAYS)
+    assert absolute >= before + lifetime - timedelta(minutes=1)
+    assert _aware(family.expires_at) <= absolute
+
+
+async def test_refresh_never_extends_past_absolute_lifetime(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_user: User,
+) -> None:
+    family = await _login_family(client, db_session, test_user)
+    soon = datetime.now(UTC) + timedelta(hours=1)
+    family.absolute_expires_at = soon
+    await db_session.commit()
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 200, response.text
+    new_token = response.cookies.get("refresh_token")
+    assert new_token
+    assert decode_token(new_token).exp <= int(soon.timestamp()) + 1
+    await db_session.refresh(family)
+    assert _aware(family.expires_at) <= soon
+
+
+async def test_refresh_after_absolute_lifetime_revokes_family(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_user: User,
+) -> None:
+    family = await _login_family(client, db_session, test_user)
+    family.absolute_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    await db_session.commit()
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert_error(response, 401)
+    await db_session.refresh(family)
+    assert family.revoked_reason == "expired"

@@ -22,6 +22,7 @@ export type {
 export type {
   Role,
   RoleWithPermissions,
+  RoleListItem,
   RoleCreate,
   RoleUpdate,
   AssignPermissionsRequest,

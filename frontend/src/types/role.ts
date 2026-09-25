@@ -15,7 +15,13 @@ export interface Role {
 /** 角色信息（含权限） */
 export interface RoleWithPermissions extends Role {
   permissions: Permission[]
-  user_count?: number
+  user_count: number
+}
+
+/** 角色列表行（只含计数；权限明细通过 GET /roles/{id} 获取） */
+export interface RoleListItem extends Role {
+  permission_count: number
+  user_count: number
 }
 
 /** 创建角色请求 */

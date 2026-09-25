@@ -41,6 +41,13 @@ class RoleWithPermissions(RoleResponse):
     user_count: int = Field(default=0, ge=0)
 
 
+class RoleListItem(RoleResponse):
+    """Role list row: counts only; permissions come from the detail endpoint."""
+
+    permission_count: int = Field(default=0, ge=0)
+    user_count: int = Field(default=0, ge=0)
+
+
 class AssignPermissionsRequest(ApiModel):
     """Replace a role's complete permission set."""
 

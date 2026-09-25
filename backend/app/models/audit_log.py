@@ -5,7 +5,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import DateTime, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -19,15 +19,21 @@ class AuditLog(Base):
 
     __tablename__ = "audit_logs"
     __table_args__ = (
-        Index("ix_audit_logs_created_at", "created_at"),
+        Index("ix_audit_logs_created_at_id", "created_at", "id"),
         Index("ix_audit_logs_action_created_at", "action", "created_at"),
         Index("ix_audit_logs_user_id_created_at", "user_id", "created_at"),
+        Index(
+            "ix_audit_logs_actor_username_trgm",
+            "actor_username",
+            postgresql_using="gin",
+            postgresql_ops={"actor_username": "gin_trgm_ops"},
+        ).ddl_if(dialect="postgresql"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
+    # 不设外键：审计记录只追加，永久删除用户不得改写历史
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actor_username: Mapped[str | None] = mapped_column(String(50), nullable=True)
     action: Mapped[str] = mapped_column(String(50), nullable=False)
     target: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="")

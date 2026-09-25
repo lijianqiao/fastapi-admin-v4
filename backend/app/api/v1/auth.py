@@ -137,6 +137,7 @@ async def register(
         await log_audit(
             db,
             user_id=user.id,
+            username=user.username,
             action="register",
             target=f"user:{user.id}",
             detail="用户自助注册",
@@ -185,7 +186,7 @@ async def login(
             db,
             user_id=None,
             action="login_failed",
-            target="auth",
+            target=f"login:{credentials.username}"[:255],
             detail="凭据验证失败",
             ip=client_ip,
         )
@@ -202,6 +203,7 @@ async def login(
     await log_audit(
         db,
         user_id=user.id,
+        username=user.username,
         action="login",
         target="auth",
         detail="用户登录",
@@ -239,6 +241,7 @@ async def refresh_token(
         await log_audit(
             db,
             user_id=exc.user_id,
+            username=exc.username,
             action="refresh_rejected",
             target="auth",
             detail="refresh token 重放或会话失效",
@@ -280,11 +283,12 @@ async def logout(
     if raw_token is not None:
         try:
             claims = decode_token(raw_token)
-            user_id = await revoke_refresh_session(db, raw_token, claims)
-            if user_id is not None:
+            revoked_user = await revoke_refresh_session(db, raw_token, claims)
+            if revoked_user is not None:
                 await log_audit(
                     db,
-                    user_id=user_id,
+                    user_id=revoked_user.id,
+                    username=revoked_user.username,
                     action="logout",
                     target="auth",
                     detail="用户退出",
@@ -297,6 +301,7 @@ async def logout(
             await log_audit(
                 db,
                 user_id=exc.user_id,
+                username=exc.username,
                 action="logout_rejected",
                 target="auth",
                 detail="logout token 不匹配，已撤销会话族",

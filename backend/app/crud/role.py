@@ -49,6 +49,30 @@ class CRUDRole(SoftDeleteCRUD[Role]):
             .scalar_subquery()
         )
 
+    @staticmethod
+    def _live_permission_count_expression() -> ScalarSelect[int]:
+        return (
+            select(func.count(role_permissions.c.permission_id))
+            .select_from(
+                role_permissions.join(Permission, Permission.id == role_permissions.c.permission_id)
+            )
+            .where(
+                role_permissions.c.role_id == Role.id,
+                Permission.is_deleted.is_(False),
+            )
+            .correlate(Role)
+            .scalar_subquery()
+        )
+
+    async def get_with_permissions(self, db: AsyncSession, role_id: int) -> Role | None:
+        """Return one active role with its live permissions and user count (no lock)."""
+        stmt = (
+            select(Role)
+            .where(Role.id == role_id, Role.is_deleted.is_(False))
+            .options(*self.load_options())
+        )
+        return (await db.execute(stmt)).scalar_one_or_none()
+
     async def get_by_name_any(self, db: AsyncSession, name: str) -> Role | None:
         """Return matching name including a recoverable soft-deleted role."""
         result = await db.execute(select(Role).where(Role.name == name))
@@ -187,8 +211,8 @@ class CRUDRole(SoftDeleteCRUD[Role]):
             select(Role)
             .where(Role.is_deleted.is_(False))
             .options(
-                selectinload(Role.permissions.and_(Permission.is_deleted.is_(False))),
                 with_expression(Role._user_count, self._active_user_count_expression()),
+                with_expression(Role._permission_count, self._live_permission_count_expression()),
             )
         )
         if search:

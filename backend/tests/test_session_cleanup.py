@@ -23,12 +23,14 @@ async def test_cleanup_removes_only_expired_history(
         user_id=test_user.id,
         token_version=0,
         expires_at=now - timedelta(days=40),
+        absolute_expires_at=now - timedelta(days=10),
     )
     active_family = RefreshSessionFamily(
         id="active-family",
         user_id=test_user.id,
         token_version=0,
         expires_at=now + timedelta(days=7),
+        absolute_expires_at=now + timedelta(days=30),
     )
     db_session.add_all([expired_family, active_family])
     await db_session.flush()

@@ -30,20 +30,33 @@ async def test_list_permissions(
     assert response.json()["data"]["total"] == len(test_permissions)
 
 
-async def test_list_permissions_grouped(
+async def test_permission_tree_groups_by_module(
     client: AsyncClient,
     auth_headers: Headers,
     test_permissions: list[Permission],
 ) -> None:
     response = await client.get(
-        "/api/v1/permissions",
-        params={"grouped": "true", "search": "user:read"},
+        "/api/v1/permissions/tree",
+        params={"search": "user:read"},
         headers=auth_headers,
     )
 
     assert response.status_code == 200, response.text
     assert "用户管理" in response.json()["data"]
     assert sum(len(items) for items in response.json()["data"].values()) == 1
+
+
+async def test_get_permission_detail(
+    client: AsyncClient,
+    auth_headers: Headers,
+    test_permissions: list[Permission],
+) -> None:
+    permission = test_permissions[0]
+
+    response = await client.get(f"/api/v1/permissions/{permission.id}", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["code"] == permission.code
 
 
 async def test_create_permission(client: AsyncClient, auth_headers: Headers) -> None:

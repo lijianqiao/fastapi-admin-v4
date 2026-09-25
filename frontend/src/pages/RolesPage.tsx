@@ -38,7 +38,7 @@ import api, { getErrorMessage } from "@/lib/api"
 import { usePaginatedQuery } from "@/hooks/use-paginated-query"
 import { usePermission } from "@/hooks/use-permission"
 import { PERMISSIONS, ROUTES } from "@/lib/constants"
-import type { RoleCreate, RoleUpdate, RoleWithPermissions } from "@/types/role"
+import type { RoleCreate, RoleListItem, RoleUpdate } from "@/types/role"
 
 export function RolesPage() {
   const { hasPermission } = usePermission()
@@ -54,20 +54,20 @@ export function RolesPage() {
     isLoading,
     onPageSizeChange,
     refetch: fetchRoles,
-  } = usePaginatedQuery<RoleWithPermissions>({
+  } = usePaginatedQuery<RoleListItem>({
     url: "/roles",
     params: search ? { search } : {},
     errorMessage: "获取角色列表失败",
   })
 
   const [formOpen, setFormOpen] = useState(false)
-  const [editingRole, setEditingRole] = useState<RoleWithPermissions | null>(
+  const [editingRole, setEditingRole] = useState<RoleListItem | null>(
     null
   )
   const [assignOpen, setAssignOpen] = useState(false)
-  const [assignRole, setAssignRole] = useState<RoleWithPermissions | null>(null)
+  const [assignRole, setAssignRole] = useState<RoleListItem | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleteRole, setDeleteRole] = useState<RoleWithPermissions | null>(null)
+  const [deleteRole, setDeleteRole] = useState<RoleListItem | null>(null)
 
   useEffect(() => {
     if (searchParams.get("create") === "1" && hasPermission(PERMISSIONS.ROLE_CREATE)) {
@@ -130,7 +130,7 @@ export function RolesPage() {
   }
 
   const handleToggleActive = useCallback(
-    async (role: RoleWithPermissions, next: boolean) => {
+    async (role: RoleListItem, next: boolean) => {
       try {
         await api.put(`/roles/${role.id}`, { is_active: next })
         toast.success(next ? "已启用角色" : "已禁用角色")
@@ -142,7 +142,7 @@ export function RolesPage() {
     [fetchRoles]
   )
 
-  const columns = useMemo<ColumnDef<RoleWithPermissions>[]>(
+  const columns = useMemo<ColumnDef<RoleListItem>[]>(
     () => [
       {
         accessorKey: "name",
@@ -161,7 +161,7 @@ export function RolesPage() {
         header: "权限数",
         cell: ({ row }) => (
           <Badge variant="secondary">
-            {row.original.permissions?.length ?? 0}
+            {row.original.permission_count}
           </Badge>
         ),
       },
@@ -169,7 +169,7 @@ export function RolesPage() {
         id: "user_count",
         header: "关联用户",
         cell: ({ row }) => (
-          <Badge variant="outline">{row.original.user_count ?? 0}</Badge>
+          <Badge variant="outline">{row.original.user_count}</Badge>
         ),
       },
       {

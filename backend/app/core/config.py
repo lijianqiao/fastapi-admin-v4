@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     REFRESH_SESSION_REPLAY_GRACE_DAYS: int = Field(default=1, ge=0, le=7)
     REFRESH_SESSION_HISTORY_RETENTION_DAYS: int = Field(default=30, ge=7, le=365)
     REFRESH_SESSION_CLEANUP_BATCH_SIZE: int = Field(default=1000, ge=100, le=10_000)
+    # 会话族最长存活时间：无论刷新多频繁，到期后必须重新登录
+    REFRESH_SESSION_ABSOLUTE_LIFETIME_DAYS: int = Field(default=30, ge=1, le=365)
 
     # 登录保护（进程内兜底；生产仍应在网关配置共享限流）
     LOGIN_RATE_LIMIT_ATTEMPTS: int = Field(default=5, ge=1, le=100)
@@ -58,6 +60,8 @@ class Settings(BaseSettings):
     REGISTRATION_RATE_LIMIT_ATTEMPTS: int = Field(default=5, ge=1, le=100)
     PASSWORD_HASH_MAX_CONCURRENCY: int = Field(default=4, ge=1, le=32)
     PASSWORD_HASH_QUEUE_TIMEOUT_SECONDS: int = Field(default=5, ge=1, le=30)
+    # 旧 bcrypt 哈希全部迁移为 Argon2id 后设为 false，以省去每次登录的 bcrypt 虚拟验证成本
+    LEGACY_BCRYPT_ENABLED: bool = True
 
     # CORS / Cookie / 代理
     BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
@@ -111,6 +115,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_security_settings(self) -> Self:
         """校验跨字段安全约束，并为本地开发生成临时密钥。"""
+        if self.REFRESH_SESSION_ABSOLUTE_LIFETIME_DAYS < self.REFRESH_TOKEN_EXPIRE_DAYS:
+            raise ValueError(
+                "REFRESH_SESSION_ABSOLUTE_LIFETIME_DAYS 不能小于 REFRESH_TOKEN_EXPIRE_DAYS"
+            )
+
         if self.SECRET_KEY is None:
             if self.ENVIRONMENT == "production":
                 raise ValueError("生产环境必须显式配置 SECRET_KEY")

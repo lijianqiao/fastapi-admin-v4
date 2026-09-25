@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import require_permission
+from app.core.errors import BadRequestError
 from app.core.permissions import Perm
 from app.crud.audit_log import audit_log_crud
 from app.models.user import User
@@ -28,12 +29,17 @@ async def list_audit_logs(
     _: User = Depends(require_permission(Perm.AUDIT_READ)),
 ) -> ResponseEnvelope[PaginatedData[AuditLogResponse]]:
     """Return a stable audit page; audit records are never mutable via the API."""
+    skip = (page - 1) * page_size
+    if skip >= audit_log_crud.count_cap:
+        raise BadRequestError(
+            f"仅支持浏览前 {audit_log_crud.count_cap} 条记录，请添加筛选条件缩小范围"
+        )
     logs, total = await audit_log_crud.get_multi_filtered(
         db,
         user_id=user_id,
         username=username,
         action=action,
-        skip=(page - 1) * page_size,
+        skip=skip,
         limit=page_size,
     )
     items = [AuditLogResponse.model_validate(log) for log in logs]

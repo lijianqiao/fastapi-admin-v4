@@ -55,6 +55,9 @@ const ACTION_ITEMS = [
   ...Object.entries(ACTION_LABELS).map(([value, label]) => ({ label, value })),
 ]
 
+/** 与后端 CRUDAuditLog.count_cap 一致 */
+const AUDIT_COUNT_CAP = 10000
+
 export function AuditLogsPage() {
   const [actionFilter, setActionFilter] = useState<string>("all")
   const [searchUsername, setSearchUsername] = useState("")
@@ -181,6 +184,7 @@ export function AuditLogsPage() {
         total={total}
         onPageChange={setPage}
         onPageSizeChange={onPageSizeChange}
+        maxTotal={AUDIT_COUNT_CAP}
       />
     </div>
   )

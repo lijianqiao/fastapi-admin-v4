@@ -6,10 +6,11 @@ from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.api.v1.recycle_bin import build_recycle_bin_router
 from app.core.deps import Audit, DbSession, PageParams, audited, page_query, require_permission
+from app.core.errors import NotFoundError
 from app.core.permissions import Perm
 from app.crud.permission import permission_crud
 from app.models.user import User
-from app.schemas.common import PaginatedData, ResponseEnvelope, success_response
+from app.schemas.common import PaginatedData, ResponseEnvelope, paginated_response, success_response
 from app.schemas.permission import PermissionCreate, PermissionResponse, PermissionUpdate
 from app.services import permissions as permissions_service
 from app.services.guards import guard_permission_purge, guard_permission_restore
@@ -30,7 +31,6 @@ router.include_router(
 )
 
 PermissionId = Annotated[int, Path(gt=0)]
-type PermissionListData = PaginatedData[PermissionResponse] | dict[str, list[PermissionResponse]]
 
 
 @router.get("")
@@ -39,21 +39,8 @@ async def list_permissions(
     _: Annotated[User, Depends(require_permission(Perm.PERMISSION_READ))],
     page: Annotated[PageParams, Depends(page_query(default_size=100, max_size=200))],
     module: Annotated[str | None, Query(min_length=1, max_length=50)] = None,
-    grouped: Annotated[bool, Query(description="按模块分组返回")] = False,
-) -> ResponseEnvelope[PermissionListData]:
-    """Return either a paginated list or a deterministic module grouping."""
-    if grouped:
-        grouped_permissions = await permission_crud.get_all_grouped(
-            db,
-            search=page.search,
-            module=module,
-        )
-        result: PermissionListData = {
-            module_name: [PermissionResponse.model_validate(item) for item in permissions]
-            for module_name, permissions in grouped_permissions.items()
-        }
-        return success_response(result)
-
+) -> ResponseEnvelope[PaginatedData[PermissionResponse]]:
+    """Return a paginated, filtered permission list."""
     permissions, total = await permission_crud.get_multi_filtered(
         db,
         search=page.search,
@@ -61,13 +48,38 @@ async def list_permissions(
         skip=page.skip,
         limit=page.page_size,
     )
-    result = PaginatedData[PermissionResponse](
-        items=[PermissionResponse.model_validate(permission) for permission in permissions],
-        total=total,
-        page=page.page,
-        page_size=page.page_size,
+    items = [PermissionResponse.model_validate(permission) for permission in permissions]
+    return paginated_response(items, total, page.page, page.page_size)
+
+
+@router.get("/tree")
+async def permission_tree(
+    db: DbSession,
+    _: Annotated[User, Depends(require_permission(Perm.PERMISSION_READ))],
+    search: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+    module: Annotated[str | None, Query(min_length=1, max_length=50)] = None,
+) -> ResponseEnvelope[dict[str, list[PermissionResponse]]]:
+    """Return every live permission grouped by module in a deterministic order."""
+    grouped = await permission_crud.get_all_grouped(db, search=search, module=module)
+    return success_response(
+        {
+            module_name: [PermissionResponse.model_validate(item) for item in permissions]
+            for module_name, permissions in grouped.items()
+        }
     )
-    return success_response(result)
+
+
+@router.get("/{permission_id}")
+async def get_permission(
+    permission_id: PermissionId,
+    db: DbSession,
+    _: Annotated[User, Depends(require_permission(Perm.PERMISSION_READ))],
+) -> ResponseEnvelope[PermissionResponse]:
+    """Return one live permission."""
+    permission = await permission_crud.get(db, permission_id)
+    if permission is None:
+        raise NotFoundError("权限不存在")
+    return success_response(PermissionResponse.model_validate(permission))
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

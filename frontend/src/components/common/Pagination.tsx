@@ -32,6 +32,8 @@ interface PaginationProps {
   total: number
   onPageChange: (page: number) => void
   onPageSizeChange: (pageSize: number) => void
+  /** 后端计数封顶值：total 超过它时显示"N+"，并把可翻页数限制在封顶范围内 */
+  maxTotal?: number
 }
 
 export function Pagination({
@@ -40,15 +42,18 @@ export function Pagination({
   total,
   onPageChange,
   onPageSizeChange,
+  maxTotal,
 }: PaginationProps) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const countable = maxTotal !== undefined && total > maxTotal ? maxTotal : total
+  const isCapped = countable !== total
+  const totalPages = Math.max(1, Math.ceil(countable / pageSize))
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1
-  const end = Math.min(page * pageSize, total)
+  const end = Math.min(page * pageSize, countable)
 
   return (
     <div className="flex flex-col items-center justify-between gap-4 py-4 sm:flex-row">
       <div className="text-sm text-muted-foreground">
-        共 {total} 条，显示 {start}-{end}
+        共 {isCapped ? `${countable}+` : total} 条，显示 {start}-{end}
       </div>
 
       <div className="flex items-center gap-4">

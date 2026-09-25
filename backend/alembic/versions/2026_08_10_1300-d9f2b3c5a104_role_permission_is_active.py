@@ -9,12 +9,22 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 
-from alembic import op
+from alembic import context, op
 
 revision: str = "d9f2b3c5a104"
 down_revision: str | None = "c8e1a2f4b903"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+
+def _require_destructive_downgrade() -> None:
+    """Require an explicit opt-in before applying downgrade operations."""
+    arguments = context.get_x_argument(as_dictionary=True)
+    if arguments.get("allow-destructive", "").casefold() != "true":
+        raise RuntimeError(
+            "Destructive downgrade blocked; rerun with "
+            "'-x allow-destructive=true' after verifying the database target"
+        )
 
 
 def upgrade() -> None:
@@ -44,5 +54,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Remove role/permission status columns."""
+    _require_destructive_downgrade()
     op.drop_column("permissions", "is_active")
     op.drop_column("roles", "is_active")

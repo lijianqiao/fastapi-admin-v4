@@ -85,9 +85,7 @@ export function PermissionsPage() {
   useEffect(() => {
     const loadModules = async () => {
       try {
-        const response = await api.get("/permissions", {
-          params: { grouped: true },
-        })
+        const response = await api.get("/permissions/tree")
         const grouped = (response.data?.data ?? {}) as GroupedPermissions
         setModuleNames(Object.keys(grouped))
       } catch {

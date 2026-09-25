@@ -43,7 +43,7 @@ class Permission(Base, TimestampMixin):
         default=False,
         server_default=false(),
     )
-    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     roles: Mapped[list[Role]] = relationship(
         "Role",

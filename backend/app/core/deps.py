@@ -147,6 +147,7 @@ class Audit:
             target=target,
             detail=detail,
             ip=self.ip,
+            username=self.actor.username,
         )
         await self.db.commit()
 

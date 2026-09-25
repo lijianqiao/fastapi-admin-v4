@@ -185,3 +185,44 @@ async def test_assign_invalid_permission_preserves_existing_permissions(
         ).all()
     )
     assert permission_ids == expected_ids
+
+
+async def test_list_roles_returns_counts_instead_of_permissions(
+    client: AsyncClient,
+    auth_headers: Headers,
+    test_role: Role,
+) -> None:
+    response = await client.get("/api/v1/roles", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    item = next(i for i in response.json()["data"]["items"] if i["id"] == test_role.id)
+    assert item["permission_count"] == 16
+    assert item["user_count"] == 1
+    assert "permissions" not in item
+
+
+async def test_get_role_detail_includes_permissions(
+    client: AsyncClient,
+    auth_headers: Headers,
+    test_role: Role,
+) -> None:
+    response = await client.get(f"/api/v1/roles/{test_role.id}", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert len(data["permissions"]) == 16
+    assert data["user_count"] == 1
+
+
+async def test_get_deleted_role_detail_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: Headers,
+) -> None:
+    role = Role(name="已删除角色", is_deleted=True)
+    db_session.add(role)
+    await db_session.commit()
+
+    response = await client.get(f"/api/v1/roles/{role.id}", headers=auth_headers)
+
+    assert_error(response, 404)

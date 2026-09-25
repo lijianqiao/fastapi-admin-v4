@@ -30,12 +30,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import api from "@/lib/api"
 import type { Permission } from "@/types/permission"
-import type { RoleWithPermissions } from "@/types/role"
+import type { Role, RoleWithPermissions } from "@/types/role"
 
 interface AssignPermissionsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  role: RoleWithPermissions | null
+  role: Role | null
   onConfirm: (permissionIds: number[]) => Promise<boolean>
 }
 
@@ -53,19 +53,15 @@ export function AssignPermissionsDialog({
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    if (open) {
-      setIsLoading(true)
-      api
-        .get("/permissions", { params: { grouped: true } })
-        .then((res) => {
-          setGroupedPerms(res.data?.data ?? {})
-        })
-        .finally(() => setIsLoading(false))
-
-      if (role) {
-        setSelectedIds(role.permissions?.map((p) => p.id) ?? [])
-      }
-    }
+    if (!open || !role) return
+    setIsLoading(true)
+    Promise.all([api.get("/permissions/tree"), api.get(`/roles/${role.id}`)])
+      .then(([treeResponse, roleResponse]) => {
+        setGroupedPerms(treeResponse.data?.data ?? {})
+        const detail = roleResponse.data?.data as RoleWithPermissions | undefined
+        setSelectedIds(detail?.permissions.map((p) => p.id) ?? [])
+      })
+      .finally(() => setIsLoading(false))
   }, [open, role])
 
   const handleToggle = (permId: number) => {

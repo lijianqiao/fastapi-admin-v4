@@ -123,3 +123,13 @@ def test_non_production_generates_ephemeral_secret() -> None:
 
     assert len(settings.secret_key) >= 32
     assert settings.migration_database_url == settings.DATABASE_URL
+
+
+def test_absolute_session_lifetime_cannot_be_shorter_than_refresh_token() -> None:
+    config = _production_config(
+        REFRESH_TOKEN_EXPIRE_DAYS=7,
+        REFRESH_SESSION_ABSOLUTE_LIFETIME_DAYS=3,
+    )
+
+    with pytest.raises(ValidationError, match="不能小于 REFRESH_TOKEN_EXPIRE_DAYS"):
+        Settings.model_validate(config)
