@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql import Select
 
+from app.core.errors import UnprocessableError
 from app.models.base import Base
 
 ModelT = TypeVar("ModelT", bound=Base)
@@ -24,14 +25,19 @@ def contains_pattern(value: str) -> str:
     return f"%{escaped}%"
 
 
-class RelatedObjectsNotFoundError(ValueError):
+_RELATION_LABELS = {"role": "角色", "permission": "权限"}
+
+
+class RelatedObjectsNotFoundError(UnprocessableError):
     """Raised when a relation assignment contains unknown or deleted IDs."""
 
     def __init__(self, relation: str, missing_ids: Iterable[int]) -> None:
         self.relation = relation
         self.missing_ids = tuple(sorted(set(missing_ids)))
-        joined_ids = ", ".join(str(item_id) for item_id in self.missing_ids)
-        super().__init__(f"{relation} IDs do not exist: {joined_ids}")
+        super().__init__(
+            f"以下{_RELATION_LABELS.get(relation, relation)}不存在或已删除",
+            data={"relation": relation, "missing_ids": list(self.missing_ids)},
+        )
 
 
 class CRUDBase(Generic[ModelT]):
@@ -71,6 +77,11 @@ class CRUDBase(Generic[ModelT]):
             .execution_options(populate_existing=True)
         )
         result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_including_deleted(self, db: AsyncSession, id: int) -> ModelT | None:
+        """Return one record by primary key regardless of soft-deletion state."""
+        result = await db.execute(select(self.model).where(self._id_column() == id))
         return result.scalar_one_or_none()
 
     async def create(self, db: AsyncSession, obj_data: ModelData) -> ModelT:

@@ -1,24 +1,25 @@
 """Asynchronous role repository."""
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, with_expression
 from sqlalchemy.sql.selectable import ScalarSelect
 
+from app.core.errors import ConflictError
 from app.crud.base import CRUDBase, ModelData, RelatedObjectsNotFoundError, contains_pattern
 from app.models.permission import Permission
-from app.models.role import Role
+from app.models.role import Role, role_permissions
 from app.models.user import User, user_roles
 
 
-class RoleInUseError(ValueError):
+class RoleInUseError(ConflictError):
     """Raised when a role still belongs to one or more non-deleted users."""
 
     def __init__(self, user_count: int) -> None:
         self.user_count = user_count
-        super().__init__(f"角色仍关联 {user_count} 个用户")
+        super().__init__(f"角色仍关联 {user_count} 个用户", data={"user_count": user_count})
 
 
 class CRUDRole(CRUDBase[Role]):
@@ -146,6 +147,27 @@ class CRUDRole(CRUDBase[Role]):
         role.permissions = await self._get_required_permissions(db, permission_ids)
         await db.flush()
         return role
+
+    async def get_permission_ids(self, db: AsyncSession, role_id: int) -> set[int]:
+        """Return every permission ID currently associated with a role."""
+        result = await db.execute(
+            select(role_permissions.c.permission_id).where(role_permissions.c.role_id == role_id)
+        )
+        return set(result.scalars().all())
+
+    async def get_permission_codes(self, db: AsyncSession, role_ids: Collection[int]) -> set[str]:
+        """Codes of non-deleted permissions attached to the given roles."""
+        if not role_ids:
+            return set()
+        stmt = (
+            select(Permission.code)
+            .join(role_permissions, role_permissions.c.permission_id == Permission.id)
+            .where(
+                role_permissions.c.role_id.in_(role_ids),
+                Permission.is_deleted.is_(False),
+            )
+        )
+        return set((await db.execute(stmt)).scalars().all())
 
     async def get_user_count(self, db: AsyncSession, role_id: int) -> int:
         """Count non-deleted users associated with a role."""

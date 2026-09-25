@@ -1,13 +1,15 @@
 """Asynchronous permission repository."""
 
 from collections import defaultdict
+from collections.abc import Collection
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from app.crud.base import CRUDBase, ModelData, contains_pattern
 from app.models.permission import Permission
+from app.models.role import Role, role_permissions
 
 
 class CRUDPermission(CRUDBase[Permission]):
@@ -38,6 +40,31 @@ class CRUDPermission(CRUDBase[Permission]):
         result = await db.execute(select(Permission).where(Permission.code == code))
         return result.scalar_one_or_none()
 
+    async def get_codes_by_ids(
+        self,
+        db: AsyncSession,
+        permission_ids: Collection[int],
+    ) -> set[str]:
+        """Codes of the given non-deleted permissions."""
+        if not permission_ids:
+            return set()
+        stmt = select(Permission.code).where(
+            Permission.id.in_(permission_ids),
+            Permission.is_deleted.is_(False),
+        )
+        return set((await db.execute(stmt)).scalars().all())
+
+    async def is_granted_through_live_role(self, db: AsyncSession, permission_id: int) -> bool:
+        """Whether any non-deleted role carries this permission."""
+        stmt = select(
+            exists().where(
+                role_permissions.c.permission_id == permission_id,
+                role_permissions.c.role_id == Role.id,
+                Role.is_deleted.is_(False),
+            )
+        )
+        return bool(await db.scalar(stmt))
+
     async def get_all_grouped(
         self,
         db: AsyncSession,
@@ -67,7 +94,7 @@ class CRUDPermission(CRUDBase[Permission]):
         if permission is None:
             return None
         for field, value in obj_data.items():
-            if field in {"name", "code", "module", "description", "is_active"}:
+            if field in {"name", "module", "description", "is_active"}:
                 setattr(permission, field, value)
         await db.flush()
         return permission

@@ -34,7 +34,7 @@ import { Pagination } from "@/components/common/Pagination"
 import { ConfirmDialog } from "@/components/common/ConfirmDialog"
 import { RoleFormDialog } from "@/components/roles/RoleFormDialog"
 import { AssignPermissionsDialog } from "@/components/roles/AssignPermissionsDialog"
-import api from "@/lib/api"
+import api, { getErrorMessage } from "@/lib/api"
 import { usePaginatedQuery } from "@/hooks/use-paginated-query"
 import { usePermission } from "@/hooks/use-permission"
 import { PERMISSIONS, ROUTES } from "@/lib/constants"
@@ -92,8 +92,8 @@ export function RolesPage() {
       }
       fetchRoles()
       return true
-    } catch {
-      toast.error(editingRole ? "更新失败" : "创建失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, editingRole ? "更新失败" : "创建失败"))
       return false
     }
   }
@@ -109,8 +109,8 @@ export function RolesPage() {
       toast.success("权限分配成功")
       fetchRoles()
       return true
-    } catch {
-      toast.error("权限分配失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "权限分配失败"))
       return false
     }
   }
@@ -135,8 +135,8 @@ export function RolesPage() {
         await api.put(`/roles/${role.id}`, { is_active: next })
         toast.success(next ? "已启用角色" : "已禁用角色")
         fetchRoles()
-      } catch {
-        toast.error("更新状态失败")
+      } catch (err) {
+        toast.error(getErrorMessage(err, "更新状态失败"))
       }
     },
     [fetchRoles]

@@ -8,6 +8,7 @@ export interface Permission {
   module: string
   description: string
   is_active: boolean
+  is_system: boolean
   created_at: string
   updated_at: string
 }
@@ -20,10 +21,9 @@ export interface PermissionCreate {
   description?: string
 }
 
-/** 更新权限请求 */
+/** 更新权限请求（权限码创建后不可修改） */
 export interface PermissionUpdate {
   name?: string
-  code?: string
   module?: string
   description?: string
   is_active?: boolean

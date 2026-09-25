@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -37,6 +37,12 @@ class Permission(Base, TimestampMixin):
     module: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_system: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
+    )
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
     roles: Mapped[list["Role"]] = relationship(  # noqa: UP037

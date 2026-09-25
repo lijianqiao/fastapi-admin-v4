@@ -1,6 +1,5 @@
 """认证、授权与请求上下文依赖。"""
 
-from collections.abc import Awaitable, Callable
 from ipaddress import ip_address
 from typing import NoReturn
 
@@ -10,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.permissions import Perm
 from app.core.security import decode_token
 from app.models.user import User
 from app.schemas.auth import TokenPayload
@@ -63,13 +63,17 @@ async def get_current_user(
     return user
 
 
-def require_permission(code: str) -> Callable[..., Awaitable[User]]:
-    """创建声明式权限校验依赖。
+class PermissionChecker:
+    """声明式权限依赖：会话校验与权限判定合并为一次查询。
 
-    会话校验与权限判定合并为一次查询，因此受保护端点只需一次数据库往返。
+    以可调用实例实现，``code`` 可被路由自省（一致性测试、OpenAPI 标注）读取。
     """
 
-    async def permission_checker(
+    def __init__(self, code: Perm) -> None:
+        self.code = code
+
+    async def __call__(
+        self,
         payload: TokenPayload = Depends(get_access_token_payload),
         db: AsyncSession = Depends(get_db),
     ) -> User:
@@ -78,18 +82,21 @@ def require_permission(code: str) -> Callable[..., Awaitable[User]]:
             user_id=payload.user_id,
             family_id=payload.sid,
             token_version=payload.ver,
-            permission_code=code,
+            permission_code=self.code,
         )
         if authorized is None:
             _raise_unauthorized("Token 已撤销或用户不可用")
         if not authorized.user.is_superuser and not authorized.has_permission:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"无权限执行此操作（需要权限：{code}）",
+                detail=f"无权限执行此操作（需要权限：{self.code}）",
             )
         return authorized.user
 
-    return permission_checker
+
+def require_permission(code: Perm) -> PermissionChecker:
+    """创建声明式权限校验依赖。"""
+    return PermissionChecker(code)
 
 
 def get_client_ip(request: Request) -> str:

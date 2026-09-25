@@ -6,6 +6,7 @@ from sqlalchemy import Exists, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.errors import ConflictError
 from app.core.security import hash_password_async, verify_and_update_password
 from app.crud.base import CRUDBase, ModelData, RelatedObjectsNotFoundError, contains_pattern
 from app.models.permission import Permission
@@ -13,7 +14,7 @@ from app.models.role import Role, role_permissions
 from app.models.user import User, user_roles
 
 
-class LastActiveSuperuserError(ValueError):
+class LastActiveSuperuserError(ConflictError):
     """Raised when an operation would remove the final active superuser."""
 
 
@@ -107,6 +108,13 @@ class CRUDUser(CRUDBase[User]):
         )
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_role_ids(self, db: AsyncSession, user_id: int) -> set[int]:
+        """Return every role ID currently associated with a user."""
+        result = await db.execute(
+            select(user_roles.c.role_id).where(user_roles.c.user_id == user_id)
+        )
+        return set(result.scalars().all())
 
     async def authenticate(
         self,

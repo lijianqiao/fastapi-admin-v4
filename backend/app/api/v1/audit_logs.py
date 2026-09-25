@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import require_permission
+from app.core.permissions import Perm
 from app.crud.audit_log import audit_log_crud
 from app.models.user import User
 from app.schemas.audit_log import AuditLogResponse
@@ -24,7 +25,7 @@ async def list_audit_logs(
     username: str | None = Query(default=None, min_length=1, max_length=50),
     action: str | None = Query(default=None, min_length=1, max_length=50),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("audit:read")),
+    _: User = Depends(require_permission(Perm.AUDIT_READ)),
 ) -> ResponseEnvelope[PaginatedData[AuditLogResponse]]:
     """Return a stable audit page; audit records are never mutable via the API."""
     logs, total = await audit_log_crud.get_multi_filtered(

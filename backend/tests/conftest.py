@@ -4,7 +4,6 @@ import os
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
-from typing import Any
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -33,6 +32,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app.core.database import get_db  # noqa: E402
+from app.core.permissions import PERMISSION_META  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402
@@ -42,7 +42,6 @@ from app.models.user import User  # noqa: E402
 from app.services.auth import login_rate_limiter, registration_rate_limiter  # noqa: E402
 
 type Headers = dict[str, str]
-type PermissionData = dict[str, Any]
 type LoginUser = Callable[[str, str], Awaitable[Headers]]
 
 
@@ -123,26 +122,17 @@ async def client(db_engine: AsyncEngine) -> AsyncIterator[AsyncClient]:
 
 @pytest_asyncio.fixture
 async def test_permissions(db_session: AsyncSession) -> list[Permission]:
-    """Create the complete permission set used by an administrator role."""
-    permission_data: list[PermissionData] = [
-        {"name": "查看用户", "code": "user:read", "module": "用户管理"},
-        {"name": "创建用户", "code": "user:create", "module": "用户管理"},
-        {"name": "更新用户", "code": "user:update", "module": "用户管理"},
-        {"name": "删除用户", "code": "user:delete", "module": "用户管理"},
-        {"name": "分配角色", "code": "user:assign", "module": "用户管理"},
-        {"name": "重置密码", "code": "user:reset_password", "module": "用户管理"},
-        {"name": "查看角色", "code": "role:read", "module": "角色管理"},
-        {"name": "创建角色", "code": "role:create", "module": "角色管理"},
-        {"name": "更新角色", "code": "role:update", "module": "角色管理"},
-        {"name": "删除角色", "code": "role:delete", "module": "角色管理"},
-        {"name": "分配权限", "code": "role:assign", "module": "角色管理"},
-        {"name": "查看权限", "code": "permission:read", "module": "权限管理"},
-        {"name": "创建权限", "code": "permission:create", "module": "权限管理"},
-        {"name": "更新权限", "code": "permission:update", "module": "权限管理"},
-        {"name": "删除权限", "code": "permission:delete", "module": "权限管理"},
-        {"name": "查看日志", "code": "audit:read", "module": "审计日志"},
+    """Create the complete registry permission set used by an administrator role."""
+    permissions = [
+        Permission(
+            code=perm.value,
+            name=meta.name,
+            module=meta.module,
+            description=meta.description,
+            is_system=True,
+        )
+        for perm, meta in PERMISSION_META.items()
     ]
-    permissions = [Permission(**data) for data in permission_data]
     db_session.add_all(permissions)
     await db_session.commit()
     return permissions

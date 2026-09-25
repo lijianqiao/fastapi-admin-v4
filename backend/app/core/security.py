@@ -19,6 +19,7 @@ from pwdlib.hashers.bcrypt import BcryptHasher
 from pydantic import ValidationError
 
 from app.core.config import settings
+from app.core.errors import ServiceUnavailableError
 from app.schemas.auth import TokenPayload
 
 # 新密码使用 Argon2id；BcryptHasher 仅用于验证旧数据并触发渐进升级。
@@ -38,8 +39,13 @@ def _dummy_hashes() -> tuple[str, str]:
     return ARGON2_HASH.hash(DUMMY_PASSWORD), BCRYPT_HASH.hash(DUMMY_PASSWORD)
 
 
-class PasswordHashOverloadedError(RuntimeError):
+class PasswordHashOverloadedError(ServiceUnavailableError):
     """Password worker capacity was unavailable within the bounded wait."""
+
+    headers = {"Retry-After": "1"}
+
+    def __init__(self) -> None:
+        super().__init__("认证服务繁忙，请稍后重试")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +86,7 @@ async def _run_password_work[**P, R](
         async with asyncio.timeout(settings.PASSWORD_HASH_QUEUE_TIMEOUT_SECONDS):
             await PASSWORD_HASH_SEMAPHORE.acquire()
     except TimeoutError as exc:
-        raise PasswordHashOverloadedError("密码服务繁忙") from exc
+        raise PasswordHashOverloadedError() from exc
 
     try:
         work = asyncio.create_task(asyncio.to_thread(func, *args, **kwargs))

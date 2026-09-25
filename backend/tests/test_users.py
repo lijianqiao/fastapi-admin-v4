@@ -203,12 +203,20 @@ async def test_delete_user(
 
 async def test_assign_roles(
     client: AsyncClient,
+    db_session: AsyncSession,
     auth_headers: Headers,
-    test_user: User,
     test_role: Role,
 ) -> None:
+    target = User(
+        username="role_target",
+        email="role-target@example.com",
+        hashed_password=hash_password("targetpassword123"),
+    )
+    db_session.add(target)
+    await db_session.commit()
+
     response = await client.put(
-        f"/api/v1/users/{test_user.id}/roles",
+        f"/api/v1/users/{target.id}/roles",
         json={"role_ids": [test_role.id]},
         headers=auth_headers,
     )
@@ -221,11 +229,19 @@ async def test_assign_invalid_role_preserves_existing_roles(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: Headers,
-    test_user: User,
     test_role: Role,
 ) -> None:
+    target = User(
+        username="role_keeper",
+        email="role-keeper@example.com",
+        hashed_password=hash_password("keeperpassword123"),
+        roles=[test_role],
+    )
+    db_session.add(target)
+    await db_session.commit()
+
     response = await client.put(
-        f"/api/v1/users/{test_user.id}/roles",
+        f"/api/v1/users/{target.id}/roles",
         json={"role_ids": [999_999]},
         headers=auth_headers,
     )
@@ -234,7 +250,7 @@ async def test_assign_invalid_role_preserves_existing_roles(
     role_ids = list(
         (
             await db_session.scalars(
-                select(user_roles.c.role_id).where(user_roles.c.user_id == test_user.id)
+                select(user_roles.c.role_id).where(user_roles.c.user_id == target.id)
             )
         ).all()
     )

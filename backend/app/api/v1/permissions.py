@@ -5,10 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_client_ip, require_permission
+from app.core.errors import ForbiddenError
+from app.core.permissions import SYSTEM_PERMISSION_CODES, Perm
 from app.crud.permission import permission_crud
 from app.models.user import User
 from app.schemas.common import PaginatedData, ResponseEnvelope, paginated_response, success_response
 from app.schemas.permission import PermissionCreate, PermissionResponse, PermissionUpdate
+from app.services.guards import ensure_permission_grant_allowed
 from app.utils.audit import log_audit
 
 router = APIRouter()
@@ -25,7 +28,7 @@ async def list_deleted_permissions(
     page_size: int = Query(default=10, ge=1, le=100),
     search: str | None = Query(default=None, min_length=1, max_length=100),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("permission:delete")),
+    _: User = Depends(require_permission(Perm.PERMISSION_DELETE)),
 ) -> ResponseEnvelope[PaginatedData[PermissionResponse]]:
     """List soft-deleted permissions in the recycle bin."""
     permissions, total = await permission_crud.get_deleted_multi(
@@ -46,9 +49,12 @@ async def restore_permission(
     request: Request,
     permission_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("permission:delete")),
+    current_user: User = Depends(require_permission(Perm.PERMISSION_DELETE)),
 ) -> ResponseEnvelope[PermissionResponse]:
     """Restore a soft-deleted permission from the recycle bin."""
+    target = await permission_crud.get_including_deleted(db, permission_id)
+    if target is not None and target.is_deleted:
+        await ensure_permission_grant_allowed(db, current_user, target)
     restored = await permission_crud.restore(db, permission_id)
     if restored is None:
         raise HTTPException(status_code=404, detail="回收站中不存在该权限")
@@ -72,9 +78,12 @@ async def purge_permission(
     request: Request,
     permission_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("permission:delete")),
+    current_user: User = Depends(require_permission(Perm.PERMISSION_DELETE)),
 ) -> ResponseEnvelope[None]:
     """Permanently delete a soft-deleted permission."""
+    target = await permission_crud.get_including_deleted(db, permission_id)
+    if target is not None and target.is_system:
+        raise ForbiddenError("系统权限不可永久删除")
     if not await permission_crud.hard_delete(db, permission_id):
         raise HTTPException(status_code=404, detail="回收站中不存在该权限")
     await log_audit(
@@ -100,7 +109,7 @@ async def list_permissions(
     module: str | None = Query(default=None, min_length=1, max_length=50),
     grouped: bool = Query(default=False, description="按模块分组返回"),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("permission:read")),
+    _: User = Depends(require_permission(Perm.PERMISSION_READ)),
 ) -> ResponseEnvelope[PermissionListData]:
     """Return either a paginated list or a deterministic module grouping."""
     if grouped:
@@ -141,9 +150,11 @@ async def create_permission(
     permission_in: PermissionCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("permission:create")),
+    current_user: User = Depends(require_permission(Perm.PERMISSION_CREATE)),
 ) -> ResponseEnvelope[PermissionResponse]:
     """Create a unique permission code."""
+    if permission_in.code in SYSTEM_PERMISSION_CODES:
+        raise ForbiddenError("该权限码由系统保留，请使用其他权限码")
     if await permission_crud.get_by_code_any(db, permission_in.code):
         raise HTTPException(status_code=409, detail="权限码已被占用（包括已删除权限）")
 
@@ -178,14 +189,13 @@ async def update_permission(
     request: Request,
     permission_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("permission:update")),
+    current_user: User = Depends(require_permission(Perm.PERMISSION_UPDATE)),
 ) -> ResponseEnvelope[PermissionResponse]:
     """Partially update a permission under a row lock."""
-    if permission_in.code is not None:
-        existing = await permission_crud.get_by_code_any(db, permission_in.code)
-        if existing is not None and existing.id != permission_id:
-            raise HTTPException(status_code=409, detail="权限码已被占用（包括已删除权限）")
-
+    if permission_in.is_active is True:
+        existing_permission = await permission_crud.get(db, permission_id)
+        if existing_permission is not None and not existing_permission.is_active:
+            await ensure_permission_grant_allowed(db, current_user, existing_permission)
     updated = await permission_crud.update(
         db,
         permission_id,
@@ -213,9 +223,12 @@ async def delete_permission(
     request: Request,
     permission_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("permission:delete")),
+    current_user: User = Depends(require_permission(Perm.PERMISSION_DELETE)),
 ) -> ResponseEnvelope[None]:
     """Soft-delete a permission under the same lock used by assignment."""
+    permission = await permission_crud.get(db, permission_id)
+    if permission is not None and permission.is_system:
+        raise ForbiddenError("系统权限不可删除")
     if not await permission_crud.soft_delete(db, permission_id):
         raise HTTPException(status_code=404, detail="权限不存在")
     await log_audit(

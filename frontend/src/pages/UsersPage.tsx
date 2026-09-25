@@ -45,7 +45,7 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog"
 import { UserFormDialog } from "@/components/users/UserFormDialog"
 import { AssignRolesDialog } from "@/components/users/AssignRolesDialog"
 import { ResetPasswordDialog } from "@/components/users/ResetPasswordDialog"
-import api from "@/lib/api"
+import api, { getErrorMessage } from "@/lib/api"
 import { usePaginatedQuery } from "@/hooks/use-paginated-query"
 import { usePermission } from "@/hooks/use-permission"
 import { PERMISSIONS, ROUTES } from "@/lib/constants"
@@ -142,8 +142,8 @@ export function UsersPage() {
       }
       fetchUsers()
       return true
-    } catch {
-      toast.error(editingUser ? "更新失败" : "创建失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, editingUser ? "更新失败" : "创建失败"))
       return false
     }
   }
@@ -155,8 +155,8 @@ export function UsersPage() {
       toast.success("角色分配成功")
       fetchUsers()
       return true
-    } catch {
-      toast.error("角色分配失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "角色分配失败"))
       return false
     }
   }
@@ -171,8 +171,8 @@ export function UsersPage() {
       })
       toast.success("密码重置成功")
       return true
-    } catch {
-      toast.error("密码重置失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "密码重置失败"))
       return false
     }
   }
@@ -184,8 +184,8 @@ export function UsersPage() {
       toast.success("删除成功")
       fetchUsers()
       return true
-    } catch {
-      toast.error("删除失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "删除失败"))
       return false
     }
   }

@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_client_ip, require_permission
+from app.core.errors import ForbiddenError
+from app.core.permissions import Perm
+from app.crud.role import role_crud
 from app.crud.user import user_crud
 from app.models.user import User
 from app.schemas.common import PaginatedData, ResponseEnvelope, paginated_response, success_response
@@ -16,6 +19,7 @@ from app.schemas.user import (
     UserWithRoles,
 )
 from app.services.auth import revoke_all_refresh_sessions
+from app.services.guards import ensure_can_manage, ensure_grantable
 from app.utils.audit import log_audit
 
 router = APIRouter()
@@ -32,7 +36,7 @@ async def list_users(
     is_active: bool | None = Query(default=None),
     role_id: int | None = Query(default=None, gt=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("user:read")),
+    _: User = Depends(require_permission(Perm.USER_READ)),
 ) -> ResponseEnvelope[PaginatedData[UserWithRoles]]:
     """Return a stable, filtered page of users with active roles."""
     users, total = await user_crud.get_multi_filtered(
@@ -56,7 +60,7 @@ async def create_user(
     user_in: UserCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("user:create")),
+    current_user: User = Depends(require_permission(Perm.USER_CREATE)),
 ) -> ResponseEnvelope[UserWithRoles]:
     """Create an unprivileged user; role assignment has its own permission."""
     if await user_crud.get_by_username_any(db, user_in.username):
@@ -90,7 +94,7 @@ async def list_deleted_users(
     page_size: int = Query(default=10, ge=1, le=100),
     search: str | None = Query(default=None, min_length=1, max_length=100),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("user:delete")),
+    _: User = Depends(require_permission(Perm.USER_DELETE)),
 ) -> ResponseEnvelope[PaginatedData[UserWithRoles]]:
     """List soft-deleted users in the recycle bin."""
     users, total = await user_crud.get_deleted_multi(
@@ -111,9 +115,12 @@ async def restore_user(
     request: Request,
     user_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("user:delete")),
+    current_user: User = Depends(require_permission(Perm.USER_DELETE)),
 ) -> ResponseEnvelope[UserWithRoles]:
     """Restore a soft-deleted user from the recycle bin."""
+    target = await user_crud.get_including_deleted(db, user_id)
+    if target is not None:
+        ensure_can_manage(current_user, target)
     restored = await user_crud.restore(db, user_id)
     if restored is None:
         raise HTTPException(status_code=404, detail="回收站中不存在该用户")
@@ -137,9 +144,12 @@ async def purge_user(
     request: Request,
     user_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("user:delete")),
+    current_user: User = Depends(require_permission(Perm.USER_DELETE)),
 ) -> ResponseEnvelope[None]:
     """Permanently delete a soft-deleted user."""
+    target = await user_crud.get_including_deleted(db, user_id)
+    if target is not None:
+        ensure_can_manage(current_user, target)
     if not await user_crud.hard_delete(db, user_id):
         raise HTTPException(status_code=404, detail="回收站中不存在该用户")
     await log_audit(
@@ -161,7 +171,7 @@ async def purge_user(
 async def get_user(
     user_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("user:read")),
+    _: User = Depends(require_permission(Perm.USER_READ)),
 ) -> ResponseEnvelope[UserWithRoles]:
     """Return one active user and their active roles."""
     user = await user_crud.get_with_roles(db, user_id)
@@ -184,12 +194,13 @@ async def update_user(
     request: Request,
     user_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("user:update")),
+    current_user: User = Depends(require_permission(Perm.USER_UPDATE)),
 ) -> ResponseEnvelope[UserWithRoles]:
     """Partially update a user and revoke sessions when disabling them."""
     user = await user_crud.get_with_roles(db, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="用户不存在")
+    ensure_can_manage(current_user, user)
     if user_id == current_user.id and user_in.is_active is False:
         # Disabling bumps the token version and revokes every family, which would
         # lock the caller out of the system immediately.
@@ -235,7 +246,7 @@ async def delete_user(
     request: Request,
     user_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("user:delete")),
+    current_user: User = Depends(require_permission(Perm.USER_DELETE)),
 ) -> ResponseEnvelope[None]:
     """Soft-delete a user and revoke all of their sessions atomically."""
     user = await user_crud.get(db, user_id)
@@ -243,6 +254,7 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="用户不存在")
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="不能删除当前登录用户")
+    ensure_can_manage(current_user, user)
 
     if not await user_crud.soft_delete(db, user_id):
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -269,11 +281,15 @@ async def reset_password(
     request: Request,
     user_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("user:reset_password")),
+    current_user: User = Depends(require_permission(Perm.USER_RESET_PASSWORD)),
 ) -> ResponseEnvelope[None]:
     """Administrator sets a new password for another user, revoking their sessions."""
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="请通过个人中心修改自己的密码")
+    target = await user_crud.get(db, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    ensure_can_manage(current_user, target)
 
     changed = await user_crud.reset_password(db, user_id, password_in.new_password)
     if not changed:
@@ -301,9 +317,22 @@ async def assign_roles(
     request: Request,
     user_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("user:assign")),
+    current_user: User = Depends(require_permission(Perm.USER_ASSIGN)),
 ) -> ResponseEnvelope[UserWithRoles]:
     """Replace a user's roles after validating the complete ID set."""
+    target = await user_crud.get(db, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    ensure_can_manage(current_user, target)
+    if not current_user.is_superuser:
+        if user_id == current_user.id:
+            raise ForbiddenError("不能修改自己的角色")
+        added_role_ids = set(roles_in.role_ids) - await user_crud.get_role_ids(db, user_id)
+        await ensure_grantable(
+            db,
+            current_user,
+            await role_crud.get_permission_codes(db, added_role_ids),
+        )
     user = await user_crud.assign_roles(db, user_id, roles_in.role_ids)
     if user is None:
         raise HTTPException(status_code=404, detail="用户不存在")

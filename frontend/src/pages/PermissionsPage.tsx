@@ -40,7 +40,7 @@ import { DataTable } from "@/components/common/DataTable"
 import { Pagination } from "@/components/common/Pagination"
 import { ConfirmDialog } from "@/components/common/ConfirmDialog"
 import { PermissionFormDialog } from "@/components/permissions/PermissionFormDialog"
-import api from "@/lib/api"
+import api, { getErrorMessage } from "@/lib/api"
 import { usePaginatedQuery } from "@/hooks/use-paginated-query"
 import { usePermission } from "@/hooks/use-permission"
 import { PERMISSIONS, ROUTES } from "@/lib/constants"
@@ -135,8 +135,8 @@ export function PermissionsPage() {
       }
       fetchPermissions()
       return true
-    } catch {
-      toast.error(editingPerm ? "更新失败" : "创建失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, editingPerm ? "更新失败" : "创建失败"))
       return false
     }
   }
@@ -148,8 +148,8 @@ export function PermissionsPage() {
       toast.success("删除成功")
       fetchPermissions()
       return true
-    } catch {
-      toast.error("删除失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "删除失败"))
       return false
     }
   }
@@ -160,8 +160,8 @@ export function PermissionsPage() {
         await api.put(`/permissions/${perm.id}`, { is_active: next })
         toast.success(next ? "已启用权限" : "已禁用权限")
         fetchPermissions()
-      } catch {
-        toast.error("更新状态失败")
+      } catch (err) {
+        toast.error(getErrorMessage(err, "更新状态失败"))
       }
     },
     [fetchPermissions]
@@ -180,9 +180,12 @@ export function PermissionsPage() {
         accessorKey: "code",
         header: "权限码",
         cell: ({ row }) => (
-          <code className="rounded bg-muted px-1.5 py-0.5 text-sm">
-            {row.original.code}
-          </code>
+          <div className="flex items-center gap-2">
+            <code className="rounded bg-muted px-1.5 py-0.5 text-sm">
+              {row.original.code}
+            </code>
+            {row.original.is_system && <Badge variant="outline">系统</Badge>}
+          </div>
         ),
       },
       {
@@ -242,7 +245,7 @@ export function PermissionsPage() {
                     <span>编辑</span>
                   </DropdownMenuItem>
                 )}
-                {hasPermission(PERMISSIONS.PERMISSION_DELETE) && (
+                {hasPermission(PERMISSIONS.PERMISSION_DELETE) && !row.original.is_system && (
                   <DropdownMenuItem
                     onClick={() => {
                       setDeletePerm(row.original)

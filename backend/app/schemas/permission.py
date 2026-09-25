@@ -28,25 +28,12 @@ class PermissionCreate(ApiModel):
 
 
 class PermissionUpdate(ApiModel):
-    """Partially update a permission."""
+    """Partially update a permission; the code is immutable once created."""
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
-    code: str | None = Field(
-        default=None,
-        min_length=3,
-        max_length=100,
-        pattern=r"^[a-z][a-z0-9_-]*:[a-z][a-z0-9_-]*$",
-    )
     module: str | None = Field(default=None, max_length=50)
     description: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
-
-    @field_validator("code", mode="before")
-    @classmethod
-    def normalize_code(cls, value: object) -> object:
-        if not isinstance(value, str):
-            return value
-        return value.strip().casefold()
 
     @model_validator(mode="after")
     def reject_empty_update(self) -> PermissionUpdate:
@@ -68,6 +55,7 @@ class PermissionResponse(ApiModel):
     module: str
     description: str
     is_active: bool
+    is_system: bool
     created_at: datetime
     updated_at: datetime
 

@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_client_ip, require_permission
+from app.core.permissions import Perm
+from app.crud.permission import permission_crud
 from app.crud.role import role_crud
 from app.models.user import User
 from app.schemas.common import PaginatedData, ResponseEnvelope, paginated_response, success_response
@@ -15,6 +17,7 @@ from app.schemas.role import (
     RoleUpdate,
     RoleWithPermissions,
 )
+from app.services.guards import ensure_grantable, ensure_role_grant_allowed
 from app.utils.audit import log_audit
 
 router = APIRouter()
@@ -29,7 +32,7 @@ async def list_roles(
     page_size: int = Query(default=10, ge=1, le=100),
     search: str | None = Query(default=None, min_length=1, max_length=100),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("role:read")),
+    _: User = Depends(require_permission(Perm.ROLE_READ)),
 ) -> ResponseEnvelope[PaginatedData[RoleWithPermissions]]:
     """Return roles with permissions and user counts without N+1 queries."""
     roles, total = await role_crud.get_multi_filtered(
@@ -51,7 +54,7 @@ async def create_role(
     role_in: RoleCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("role:create")),
+    current_user: User = Depends(require_permission(Perm.ROLE_CREATE)),
 ) -> ResponseEnvelope[RoleWithPermissions]:
     """Create a role without implicitly assigning privileged permissions."""
     if await role_crud.get_by_name_any(db, role_in.name):
@@ -83,7 +86,7 @@ async def list_deleted_roles(
     page_size: int = Query(default=10, ge=1, le=100),
     search: str | None = Query(default=None, min_length=1, max_length=100),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_permission("role:delete")),
+    _: User = Depends(require_permission(Perm.ROLE_DELETE)),
 ) -> ResponseEnvelope[PaginatedData[RoleResponse]]:
     """List soft-deleted roles in the recycle bin."""
     roles, total = await role_crud.get_deleted_multi(
@@ -104,9 +107,12 @@ async def restore_role(
     request: Request,
     role_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("role:delete")),
+    current_user: User = Depends(require_permission(Perm.ROLE_DELETE)),
 ) -> ResponseEnvelope[RoleWithPermissions]:
     """Restore a soft-deleted role from the recycle bin."""
+    target = await role_crud.get_including_deleted(db, role_id)
+    if target is not None and target.is_deleted:
+        await ensure_role_grant_allowed(db, current_user, role_id)
     restored = await role_crud.restore(db, role_id)
     if restored is None:
         raise HTTPException(status_code=404, detail="回收站中不存在该角色")
@@ -130,7 +136,7 @@ async def purge_role(
     request: Request,
     role_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("role:delete")),
+    current_user: User = Depends(require_permission(Perm.ROLE_DELETE)),
 ) -> ResponseEnvelope[None]:
     """Permanently delete a soft-deleted role."""
     if not await role_crud.hard_delete(db, role_id):
@@ -161,9 +167,13 @@ async def update_role(
     request: Request,
     role_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("role:update")),
+    current_user: User = Depends(require_permission(Perm.ROLE_UPDATE)),
 ) -> ResponseEnvelope[RoleWithPermissions]:
     """Partially update a role."""
+    if role_in.is_active is True:
+        existing_role = await role_crud.get(db, role_id)
+        if existing_role is not None and not existing_role.is_active:
+            await ensure_role_grant_allowed(db, current_user, role_id)
     if role_in.name is not None:
         existing = await role_crud.get_by_name_any(db, role_in.name)
         if existing is not None and existing.id != role_id:
@@ -192,7 +202,7 @@ async def delete_role(
     request: Request,
     role_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("role:delete")),
+    current_user: User = Depends(require_permission(Perm.ROLE_DELETE)),
 ) -> ResponseEnvelope[None]:
     """Soft-delete an unassigned role under a row lock."""
     if not await role_crud.soft_delete_if_unassigned(db, role_id):
@@ -218,9 +228,16 @@ async def assign_permissions(
     request: Request,
     role_id: int = Path(gt=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("role:assign")),
+    current_user: User = Depends(require_permission(Perm.ROLE_ASSIGN)),
 ) -> ResponseEnvelope[RoleWithPermissions]:
     """Replace role permissions after validating every requested ID."""
+    if not current_user.is_superuser:
+        added_ids = set(perms_in.permission_ids) - await role_crud.get_permission_ids(db, role_id)
+        await ensure_grantable(
+            db,
+            current_user,
+            await permission_crud.get_codes_by_ids(db, added_ids),
+        )
     role = await role_crud.assign_permissions(db, role_id, perms_in.permission_ids)
     if role is None:
         raise HTTPException(status_code=404, detail="角色不存在")

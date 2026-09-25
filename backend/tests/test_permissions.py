@@ -64,17 +64,16 @@ async def test_create_permission(client: AsyncClient, auth_headers: Headers) -> 
 
 async def test_create_duplicate_permission_returns_http_409(
     client: AsyncClient,
+    db_session: AsyncSession,
     auth_headers: Headers,
     test_permissions: list[Permission],
 ) -> None:
-    permission = test_permissions[0]
+    db_session.add(Permission(name="导出报表", code="report:export", module="报表"))
+    await db_session.commit()
+
     response = await client.post(
         "/api/v1/permissions",
-        json={
-            "name": "重复权限",
-            "code": permission.code,
-            "module": permission.module,
-        },
+        json={"name": "重复权限", "code": "report:export", "module": "报表"},
         headers=auth_headers,
     )
 
@@ -243,6 +242,7 @@ async def test_update_permission(
 async def test_toggle_permission_is_active(
     client: AsyncClient,
     auth_headers: Headers,
+    superuser_headers: Headers,
     test_permissions: list[Permission],
 ) -> None:
     permission = test_permissions[0]
@@ -255,10 +255,11 @@ async def test_toggle_permission_is_active(
     assert response.status_code == 200, response.text
     assert response.json()["data"]["is_active"] is False
 
+    # 停用后该权限不再是任何人的有效权限，重新启用等同于授权，只有超管可以完成。
     response = await client.put(
         f"/api/v1/permissions/{permission.id}",
         json={"is_active": True},
-        headers=auth_headers,
+        headers=superuser_headers,
     )
 
     assert response.status_code == 200, response.text
@@ -271,14 +272,17 @@ async def test_delete_permission(
     auth_headers: Headers,
     test_permissions: list[Permission],
 ) -> None:
-    permission_id = test_permissions[-1].id
+    custom = Permission(name="导出报表", code="report:export", module="报表")
+    db_session.add(custom)
+    await db_session.commit()
+
     response = await client.delete(
-        f"/api/v1/permissions/{permission_id}",
+        f"/api/v1/permissions/{custom.id}",
         headers=auth_headers,
     )
 
     assert response.status_code == 200, response.text
     is_deleted = await db_session.scalar(
-        select(Permission.is_deleted).where(Permission.id == permission_id)
+        select(Permission.is_deleted).where(Permission.id == custom.id)
     )
     assert is_deleted is True

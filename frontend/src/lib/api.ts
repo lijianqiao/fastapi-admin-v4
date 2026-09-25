@@ -50,6 +50,17 @@ export async function refreshAccessToken(): Promise<string> {
   return newToken
 }
 
+/** 从 axios 错误中取出后端统一错误信封的 message，取不到时返回 fallback */
+export function getErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { message?: unknown } | undefined
+    if (typeof data?.message === "string" && data.message) {
+      return data.message
+    }
+  }
+  return fallback
+}
+
 // ===== 请求拦截器：自动携带 access_token =====
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {

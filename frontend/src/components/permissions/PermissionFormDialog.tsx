@@ -71,7 +71,11 @@ export function PermissionFormDialog({
   }, [open, permission, form])
 
   const handleSubmit = async (data: FormData) => {
-    const ok = await onSubmit(data)
+    // 权限码创建后不可修改：编辑时不提交 code
+    const payload: PermissionCreate | PermissionUpdate = isEdit
+      ? { name: data.name, module: data.module, description: data.description }
+      : data
+    const ok = await onSubmit(payload)
     if (ok) onOpenChange(false)
   }
 
@@ -114,9 +118,16 @@ export function PermissionFormDialog({
                     className="font-mono"
                     aria-invalid={fieldState.invalid}
                     {...field}
+                    disabled={isEdit}
                   />
                   <FieldDescription>
-                    格式为 <code>模块:动作</code>，如 <code>user:read</code>。
+                    {isEdit ? (
+                      "权限码创建后不可修改。"
+                    ) : (
+                      <>
+                        格式为 <code>模块:动作</code>，如 <code>user:read</code>。
+                      </>
+                    )}
                   </FieldDescription>
                   <FieldError errors={[fieldState.error]} />
                 </Field>
